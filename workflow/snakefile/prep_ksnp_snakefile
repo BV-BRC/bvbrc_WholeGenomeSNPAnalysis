@@ -1,0 +1,75 @@
+import json
+import os
+
+msg = 'Checkpoint 3: snakefile command recieved - Prepping files for kSNP4 \n'
+sys.stderr.write(msg)
+
+current_directory = os.getcwd()
+print(current_directory)
+# Load the JSON data
+with open('{}/config.json'.format(current_directory)) as f:
+    data = json.load(f)
+
+rule_all_list = [
+                "{}/clean_fastas_complete.txt".format(current_directory),
+                "{}/clean_fastas/ksnp4_input_file.txt".format(current_directory),
+                "{}/clean_fastas/Kchooser4_ksnp4_input_file.report".format(current_directory)
+                ]
+
+rule all:
+    input:
+        rule_all_list
+
+
+rule remove_special_characters_from_fasta_names:
+    input:
+        raw_fasta_dir = data["raw_fasta_dir"],
+        config = '{}/config.json'.format(current_directory)
+    params:
+        clean_fasta_dir = "{}/clean_fastas".format(current_directory)
+    output:
+        touchpoint = "{}/clean_fastas_complete.txt".format(current_directory)
+    shell:
+            """
+            mkdir -p {params.clean_fasta_dir}
+
+            clean_fasta_filenames \
+                {input.raw_fasta_dir} \
+                {params.clean_fasta_dir} \
+                {input.config}
+
+            touch {output.touchpoint}
+            """
+
+rule write_kSNP4_input_file:
+    input:
+        touchpoint = "{}/clean_fastas_complete.txt".format(current_directory)
+    params:
+        clean_fasta_dir = directory("{}/clean_fastas".format(current_directory))
+    output:
+        ksnp_in_file = "{}/clean_fastas/ksnp4_input_file.txt".format(current_directory) # writing to fasta dir because Kchooser4 is picky 
+    shell:
+            """
+            MakeKSNP4infile -indir {params.clean_fasta_dir} -outfile {output.ksnp_in_file}
+            """
+
+rule run_kchooser:
+    input:
+        ksnp_in_file = "{}/clean_fastas/ksnp4_input_file.txt".format(current_directory)
+    params:
+        clean_fasta_dir = directory("{}/clean_fastas".format(current_directory)),
+        current_directory_ = directory(current_directory),
+        ksnp4_input_file = "ksnp4_input_file.txt"
+    output:
+        output_from_kchooser = "{}/clean_fastas/Kchooser4_ksnp4_input_file.report".format(current_directory),
+        optimum_k_txt = "{}/optimum_k.txt".format(current_directory)
+    shell:
+        """
+        cd {params.clean_fasta_dir}
+
+        Kchooser4 -in {params.ksnp4_input_file}
+
+        cd {params.current_directory_}
+
+        parse_kchooser_report {output.output_from_kchooser} > {output.optimum_k_txt}
+        """

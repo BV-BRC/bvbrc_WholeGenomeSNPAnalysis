@@ -1,0 +1,98 @@
+import json
+import os
+
+## grab optimum k value ##
+def read_k_value(file_path):
+    try:
+        with open(file_path, "r") as file:
+            value = file.read().strip()
+            return int(value) if value.isdigit() else None
+    except:
+        print("An exception occurred")
+        return None  # Return None if file is missing or doesn't contain a valid number
+        # this will crash the job
+
+msg = 'Checkpoint 5: snakefile command recieved - kSNP4 analysis \n'
+sys.stderr.write(msg)
+
+current_directory = os.getcwd()
+# Load the JSON data
+with open('{}/config.json'.format(current_directory)) as f:
+    data = json.load(f)
+
+rule_all_list = [
+                # "{}/annotated_genome_list.txt".format(current_directory),
+                "{}/kSNP_command_touchpoint.txt".format(current_directory),
+                # "{}/kSNP_annotation_command_touchpoint.txt".format(current_directory)
+                ]
+
+rule all:
+    input:
+        rule_all_list
+
+
+rule create_genome_list:
+    input:
+        ksnp_in_file = "{}/clean_fastas/ksnp4_input_file.txt".format(current_directory)
+    output:
+        annotated_genome_list = "{}/annotated_genome_list.txt".format(current_directory),
+    shell:
+        """
+        genomeNames4 {input.ksnp_in_file} {output.annotated_genome_list}
+        """
+
+rule run_kSNP4:
+    input:
+        ksnp_in_file = "{}/clean_fastas/ksnp4_input_file.txt".format(current_directory)
+    params:
+        optimum_k = read_k_value("{}/optimum_k.txt".format(current_directory)),
+        out_dir = data["output_data_dir"]
+    output:
+        touchpoint = "{}/kSNP_command_touchpoint.txt".format(current_directory)
+
+    shell:
+        """
+        echo {params.optimum_k}
+
+        kSNP4 \
+            -in {input.ksnp_in_file}\
+            -outdir {params.out_dir} \
+            -k {params.optimum_k} \
+            -core \
+            -NJ \
+            -ML \
+            -vcf \
+            -debug \
+            -CPU 7
+
+        touch {output.touchpoint}
+        """
+
+rule run_kSNP4_with_annotation:
+    input:
+        annotated_genome_list = "{}/annotated_genome_list.txt".format(current_directory),
+        ksnp_in_file = "{}/clean_fastas/ksnp4_input_file.txt".format(current_directory)
+    params:
+        optimum_k = read_k_value("{}/optimum_k.txt".format(current_directory)),
+        out_dir = '/annotation_run'.format(data["output_data_dir"])
+    output:
+        touchpoint = "{}/kSNP_annotation_command_touchpoint.txt".format(current_directory)
+
+    shell:
+        """
+        echo {params.optimum_k}
+
+        kSNP4 \
+            -in {input.ksnp_in_file}\
+            -outdir {params.out_dir} \
+            -k {params.optimum_k} \
+            -annotate {input.annotated_genome_list} \
+            -core \
+            -NJ \
+            -ML \
+            -vcf \
+            -debug \
+            -CPU 7
+
+        touch {output.touchpoint}
+        """
