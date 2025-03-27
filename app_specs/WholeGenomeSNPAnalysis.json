@@ -1,8 +1,8 @@
 {
-    "id": "MetagenomicReadMapping",
-    "label": "Metagenomic read mapping",
-    "script": "App-MetagenomicReadMapping",
-    "description": "Map metagenomic reads to a defined gene set",
+    "id": "WholeGenomeSNPAnalysis",
+    "label": "Whole Genome SNP Analysis",
+    "script": "App-WholeGenomeSNPAnalysis",
+    "description": "Identify SNP differences in a genome group with genomes of the same species.",
     "default_memory": "100G",
     "parameters": [
         {
