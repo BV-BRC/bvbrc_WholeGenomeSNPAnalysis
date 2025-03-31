@@ -255,38 +255,6 @@ sub preflight
 {
     my($app, $app_def, $raw_params, $params) = @_;
 
-    print('preflight function is found!!');
-    ## nb dev
-    if ($params->{input_genome_type} eq 'genome_group')
-    {
-        print('input genome group');
-        my $genome_group_path = $params->{input_genome_group};
-        my $group_name = basename($genome_group_path);
-
-        # Get all patric ids via p3-get-genome-group
-        my @cmd = ("p3-get-genome-group", $group_name);
-        my $genome_list;
-        my $ok = IPC::Run::run(\@cmd, '>', \$genome_list);
-
-        if (!$ok) {
-            die "p3-get-genome-group execution failed: @cmd\n";
-            }
-
-        print($genome_list);
-        # Loop through each genome ID and fetch the fasta
-        # my @genome_ids = split(/\n/, $genome_list);
-        # print Dumper @genome_ids;
-        # shift @genome_ids;  # Removes the genome name
-    }
-    ## end nb dev
-    # my $readset = Bio::KBase::AppService::ReadSet->create_from_asssembly_params($params);
-
-    # my($ok, $errs, $comp_size, $uncomp_size) = $readset->validate($app->workspace);
-
-    # if (!$ok)
-    # {
-	#      die "Readset failed to validate. Errors:\n\t" . join("\n\t", @$errs);
-    # }
     my $time = 60 * 60 * 12;
     my $pf = {
             	cpu => 1,
@@ -294,7 +262,6 @@ sub preflight
             	runtime => $time,
             	# storage => 1.1 * ($comp_size + $uncomp_size),
                 storage => 0,
-
               };
 
     return $pf;
