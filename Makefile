@@ -44,16 +44,10 @@ deploy-client: deploy-libs deploy-scripts deploy-docs
 
 deploy-service: deploy-libs deploy-scripts deploy-service-scripts deploy-specs deploy-workflow
 
-deploy-dir:
-        if [ ! -d $(SERVICE_DIR) ] ; then mkdir $(SERVICE_DIR) ; fi
-        if [ ! -d $(SERVICE_DIR)/bin ] ; then mkdir $(SERVICE_DIR)/bin ; fi
-
-deploy-docs:
-
 deploy-workflow:
-        mkdir -p $(TARGET)/workflows
-        rm -rf $(TARGET)/workflows/$(CURRENT_DIR)
-        rsync -arv workflow/. $(TARGET)/workflows/$(CURRENT_DIR)
+	mkdir -p $(TARGET)/workflows
+	rm -rf $(TARGET)/workflows/$(CURRENT_DIR)
+	rsync -arv workflow/. $(TARGET)/workflows/$(CURRENT_DIR)
 
 deploy-specs:
 	mkdir -p $(TARGET)/services/$(APP_SERVICE)
