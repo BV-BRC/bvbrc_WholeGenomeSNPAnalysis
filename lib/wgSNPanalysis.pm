@@ -1,4 +1,4 @@
-package WholeGenomeSNPanalysis;
+package wgSNPanalysis;
 
 use File::Slurp;
 use IPC::Run;
@@ -260,7 +260,6 @@ sub preflight
             	cpu => 1,
             	memory => "32G",
             	runtime => $time,
-            	# storage => 1.1 * ($comp_size + $uncomp_size),
                 storage => 0,
               };
 
