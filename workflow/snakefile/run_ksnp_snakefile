@@ -46,7 +46,7 @@ rule run_kSNP4:
         ksnp_in_file = "{}/clean_fastas/ksnp4_input_file.txt".format(current_directory)
     params:
         optimum_k = read_k_value("{}/optimum_k.txt".format(current_directory)),
-        out_dir = data["output_data_dir"]
+        out_dir = data["work_data_dir"]
     output:
         touchpoint = "{}/kSNP_command_touchpoint.txt".format(current_directory)
 

@@ -5,7 +5,7 @@ msg = 'Checkpoint 3: snakefile command recieved - Prepping files for kSNP4 \n'
 sys.stderr.write(msg)
 
 current_directory = os.getcwd()
-print(current_directory)
+
 # Load the JSON data
 with open('{}/config.json'.format(current_directory)) as f:
     data = json.load(f)
