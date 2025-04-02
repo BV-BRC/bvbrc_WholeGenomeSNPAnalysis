@@ -10,12 +10,9 @@ use File::Basename;
 use File::Temp;
 use JSON::XS;
 use Getopt::Long::Descriptive;
-# Get perl module;
-use lib '/home/nbowers/bvbrc-dev/dev_container/modules/bvbrc_WholeGenomeSNPAnalysis/lib/';  # use NB dev
+use wgSNPanalysis;
 
-use wgSNPanalysis qw(my_function);
-
-my $wgSNPanalysis = new WholeGenomeSNPanalysis();
+my $wgSNPanalysis = new wgSNPanalysis();
 
 my $app = Bio::KBase::AppService::AppScript->new(sub { $wgSNPanalysis->run_WholeGenomeSNPanalysis(@_); },
 						 sub { $wgSNPanalysis->preflight(@_); });
