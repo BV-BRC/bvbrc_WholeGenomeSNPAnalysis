@@ -100,7 +100,7 @@ rule run_kSNP4_with_annotation:
 
 rule organize_files:
     input:
-        touchpoint = "{}/kSNP_annotation_command_touchpoint.txt".format(current_directory),
+        touchpoint = "{}/kSNP_command_touchpoint.txt".format(current_directory)
         config = '{}/config.json'.format(current_directory)
     output:
         touchpoint = "{}/organize_files_touchpoint.txt".format(current_directory)
