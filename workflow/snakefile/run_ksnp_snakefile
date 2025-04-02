@@ -23,7 +23,8 @@ with open('{}/config.json'.format(current_directory)) as f:
 rule_all_list = [
                 # "{}/annotated_genome_list.txt".format(current_directory),
                 "{}/kSNP_command_touchpoint.txt".format(current_directory),
-                # "{}/kSNP_annotation_command_touchpoint.txt".format(current_directory)
+                # "{}/kSNP_annotation_command_touchpoint.txt".format(current_directory),
+                "{}/organize_files_touchpoint.txt".format(current_directory)
                 ]
 
 rule all:
@@ -95,4 +96,15 @@ rule run_kSNP4_with_annotation:
             -CPU 7
 
         touch {output.touchpoint}
+        """
+
+rule organize_files:
+    input:
+        touchpoint = "{}/kSNP_annotation_command_touchpoint.txt".format(current_directory),
+        config = '{}/config.json'.format(current_directory)
+    output:
+        touchpoint = "{}/organize_files_touchpoint.txt".format(current_directory)
+    shell:
+        """
+        organize_output {input.config}
         """

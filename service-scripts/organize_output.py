@@ -24,7 +24,7 @@ def organize_files_by_type(source_dir, destination_dir):
             continue
         
         # Sort files into directories according to the first word
-        if firstword == "All_SNPs" or firstword == "nonCore":
+        if firstword == "All" or firstword == "nonCore" or firstword == "SNPs":
             All_SNPs_dir = os.path.join(destination_dir, "All_SNPs")
             os.makedirs(All_SNPs_dir, exist_ok=True)
             shutil.copy(file_path, All_SNPs_dir)
