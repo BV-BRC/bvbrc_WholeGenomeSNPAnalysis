@@ -107,4 +107,6 @@ rule organize_files:
     shell:
         """
         organize_output {input.config}
+
+        touch {output.touchpoint}
         """
