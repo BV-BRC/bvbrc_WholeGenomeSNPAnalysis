@@ -19,12 +19,15 @@ current_directory = os.getcwd()
 # Load the JSON data
 with open('{}/config.json'.format(current_directory)) as f:
     data = json.load(f)
+clean_fasta_dir = data["clean_data_dir"]
+work_data_dir = data["work_data_dir"]
 
 rule_all_list = [
                 # "{}/annotated_genome_list.txt".format(current_directory),
-                "{}/kSNP_command_touchpoint.txt".format(current_directory),
+                "{}/kSNP_command_touchpoint.txt".format(work_data_dir),
                 # "{}/kSNP_annotation_command_touchpoint.txt".format(current_directory),
-                "{}/organize_files_touchpoint.txt".format(current_directory)
+                "{}/phylo_xml_trees_touchpoint.txt".format(work_data_dir),
+                "{}/organize_files_touchpoint.txt".format(work_data_dir)
                 ]
 
 rule all:
@@ -32,24 +35,24 @@ rule all:
         rule_all_list
 
 
-rule create_genome_list:
-    input:
-        ksnp_in_file = "{}/clean_fastas/ksnp4_input_file.txt".format(current_directory)
-    output:
-        annotated_genome_list = "{}/annotated_genome_list.txt".format(current_directory),
-    shell:
-        """
-        genomeNames4 {input.ksnp_in_file} {output.annotated_genome_list}
-        """
+# rule create_genome_list:
+#     input:
+#         ksnp_in_file = "{}/clean_fastas/ksnp4_input_file.txt".format(clean_fasta_dir)
+#     output:
+#         annotated_genome_list = "{}/annotated_genome_list.txt".format(current_directory),
+#     shell:
+#         """
+#         genomeNames4 {input.ksnp_in_file} {output.annotated_genome_list}
+#         """
 
 rule run_kSNP4:
     input:
-        ksnp_in_file = "{}/clean_fastas/ksnp4_input_file.txt".format(current_directory)
+        ksnp_in_file = "{}/ksnp4_input_file.txt".format(clean_fasta_dir)
     params:
-        optimum_k = read_k_value("{}/optimum_k.txt".format(current_directory)),
+        optimum_k = read_k_value("{}/optimum_k.txt".format(work_data_dir)),
         out_dir = data["work_data_dir"]
     output:
-        touchpoint = "{}/kSNP_command_touchpoint.txt".format(current_directory)
+        touchpoint = "{}/kSNP_command_touchpoint.txt".format(work_data_dir)
 
     shell:
         """
@@ -69,44 +72,59 @@ rule run_kSNP4:
         touch {output.touchpoint}
         """
 
-rule run_kSNP4_with_annotation:
-    input:
-        annotated_genome_list = "{}/annotated_genome_list.txt".format(current_directory),
-        ksnp_in_file = "{}/clean_fastas/ksnp4_input_file.txt".format(current_directory)
-    params:
-        optimum_k = read_k_value("{}/optimum_k.txt".format(current_directory)),
-        out_dir = '/annotation_run'.format(data["output_data_dir"])
-    output:
-        touchpoint = "{}/kSNP_annotation_command_touchpoint.txt".format(current_directory)
+# rule run_kSNP4_with_annotation:
+#     input:
+#         annotated_genome_list = "{}/annotated_genome_list.txt".format(current_directory),
+#         ksnp_in_file = "{}/clean_fastas/ksnp4_input_file.txt".format(current_directory)
+#     params:
+#         optimum_k = read_k_value("{}/optimum_k.txt".format(current_directory)),
+#         out_dir = '/annotation_run'.format(data["output_data_dir"])
+#     output:
+#         touchpoint = "{}/kSNP_annotation_command_touchpoint.txt".format(current_directory)
 
+#     shell:
+#         """
+#         echo {params.optimum_k}
+
+#         kSNP4 \
+#             -in {input.ksnp_in_file}\
+#             -outdir {params.out_dir} \
+#             -k {params.optimum_k} \
+#             -annotate {input.annotated_genome_list} \
+#             -core \
+#             -NJ \
+#             -ML \
+#             -vcf \
+#             -debug \
+#             -CPU 7
+
+#         touch {output.touchpoint}
+#         """
+
+
+rule convert_trees_to_phyloxml:
+    input:
+        touchpoint = "{}/kSNP_command_touchpoint.txt".format(work_data_dir),
+        config = '{}/config.json'.format(current_directory)
+    output:
+        touchpoint = "{}/phylo_xml_trees_touchpoint.txt".format(work_data_dir)
     shell:
         """
-        echo {params.optimum_k}
-
-        kSNP4 \
-            -in {input.ksnp_in_file}\
-            -outdir {params.out_dir} \
-            -k {params.optimum_k} \
-            -annotate {input.annotated_genome_list} \
-            -core \
-            -NJ \
-            -ML \
-            -vcf \
-            -debug \
-            -CPU 7
+        whole_genome_snp_utils convert-to-phyloxml-trees {input.config}
 
         touch {output.touchpoint}
         """
 
 rule organize_files:
     input:
-        touchpoint = "{}/kSNP_command_touchpoint.txt".format(current_directory),
+        # touchpoint = "{}/kSNP_command_touchpoint.txt".format(work_data_dir),
+        touchpoint = "{}/phylo_xml_trees_touchpoint.txt".format(work_data_dir),
         config = '{}/config.json'.format(current_directory)
     output:
-        touchpoint = "{}/organize_files_touchpoint.txt".format(current_directory)
+        touchpoint = "{}/organize_files_touchpoint.txt".format(work_data_dir)
     shell:
         """
-        organize_output {input.config}
+        whole_genome_snp_utils organize-output-files {input.config}
 
         touch {output.touchpoint}
         """
