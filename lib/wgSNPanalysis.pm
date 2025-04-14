@@ -271,9 +271,17 @@ sub save_output_files
     my($app, $output) = @_;
 
     my %suffix_map = (
+            phyloxml => 'phyloxml',
             tre => 'nwk',
             NJ => 'txt',
             ML => 'txt',
+            SNPs_all => 'tsv',
+            SNPs_all_matrix => 'txt',
+            core_SNPs => 'tsv',
+            5 => 'tsv',
+            nonCore_SNPs => 'tsv',
+            core_SNPs => 'tsv',
+            core_SNPs_matrix => 'txt',
             vcf => 'vcf',
             fasta => 'contigs',
             html => 'html');
