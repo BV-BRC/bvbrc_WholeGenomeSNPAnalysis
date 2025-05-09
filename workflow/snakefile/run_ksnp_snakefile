@@ -1,3 +1,7 @@
+#### NICOLE ALERT ####
+# UPDATE THE PATH TO KSNPDIST ONCE IN THE CONTAINER
+#### NICOLE ALERT ####
+
 import json
 import os
 
@@ -27,7 +31,8 @@ rule_all_list = [
                 "{}/kSNP_command_touchpoint.txt".format(work_data_dir),
                 # "{}/kSNP_annotation_command_touchpoint.txt".format(current_directory),
                 "{}/phylo_xml_trees_touchpoint.txt".format(work_data_dir),
-                "{}/organize_files_touchpoint.txt".format(work_data_dir)
+                "{}/organize_files_touchpoint.txt".format(work_data_dir),
+                # "{}/PLOTLY PLACEHOLDER".format(work_data_dir),
                 ]
 
 rule all:
@@ -62,6 +67,7 @@ rule run_kSNP4:
             -in {input.ksnp_in_file}\
             -outdir {params.out_dir} \
             -k {params.optimum_k} \
+            -min_frac 0.5 \
             -core \
             -NJ \
             -ML \
@@ -117,7 +123,6 @@ rule convert_trees_to_phyloxml:
 
 rule organize_files:
     input:
-        # touchpoint = "{}/kSNP_command_touchpoint.txt".format(work_data_dir),
         touchpoint = "{}/phylo_xml_trees_touchpoint.txt".format(work_data_dir),
         config = '{}/config.json'.format(current_directory)
     output:
@@ -127,4 +132,17 @@ rule organize_files:
         whole_genome_snp_utils organize-output-files {input.config}
 
         touch {output.touchpoint}
+        """
+
+rule run_kdist:
+    input:
+        snp_all_matrix = "{}/SNPs_all_matrix.fasta".format(work_data_dir)
+    output:
+        dist_matrix = "{}/kSNPdist.matrix".format(work_data_dir),
+        dist_report = "{}/kSNPdist.report".format(work_data_dir),
+    shell:
+        """
+        /home/nbowers/bvbrc-dev/dev_container/tools/kSNP4.1pkg/kSNPdist {input.snp_all_matrix}
+
+        whole_genome_snp_utils write-snp-distance-heatmap
         """
