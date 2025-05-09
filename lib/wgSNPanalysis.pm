@@ -87,7 +87,6 @@ sub run
     #
     # set up for genome groups
     #
-
     if ($params->{input_genome_type} ne 'genome_group' and
 	$params->{input_genome_type} ne 'genome_fasta')
     {
@@ -100,50 +99,34 @@ sub run
     {
         my $genome_group_path = $params->{input_genome_group};
         my $group_name = basename($genome_group_path);
-
-        # Get all patric ids via p3-get-genome-group
-        my @cmd = ("p3-get-genome-group", $group_name);
-        my $genome_list;
-        my $ok = IPC::Run::run(\@cmd, '>', \$genome_list);
-
-        if (!$ok) {
-            die "p3-get-genome-group execution failed: @cmd\n";
-            }
-
-        # Loop through each genome ID and fetch the fasta
-        my @genome_ids = split(/\n/, $genome_list);
-        shift @genome_ids;  # Removes the genome name
-        foreach my $genome_id (@genome_ids){
-            chomp $genome_id;
-            # next unless $genome_id; # skip empty lines
-            # define fasta dir for MakeWholeGenomeSNPanalysisinfile
-            my $fasta_file = "$raw_fasta_dir/$genome_id.fasta";
-
-            # Run p3-genome-fasta for each genome ID
-            my @fasta_cmd = ("p3-genome-fasta", "--contig", $genome_id);
-            my $fasta_output;
-
-            my $stderr;
-            my $ok = IPC::Run::run(\@fasta_cmd, '>', \$fasta_output, '2>', \$stderr);
-            if (!$ok || $stderr) {
-                die "p3-genome-fasta execution failed for $genome_id: @fasta_cmd\nError: $stderr\n";
-            }
-
-
-            # Write FASTA output to file
-            open(my $fh, '>', $fasta_file) or die "Could not open $fasta_file: $!\n";
-
-            if ($fasta_output) {
-                print $fh $fasta_output;
-            } else {
-                warn "Warning: No FASTA data retrieved for genome ID $genome_id\n";
-            }
-            close($fh);
-
-            print "Saved FASTA for $genome_id to $fasta_file\n";
-        }
+        my $api = P3DataAPI->new;
+        # my $group_genome_ids = $api->retrieve_patric_ids_from_genome_group($genome_group_path);
+        my @group_genome_ids = $api->retrieve_patric_ids_from_genome_group($genome_group_path);
+        # $api ->retrieve_contigs_in_genomes($group_genome_ids, $raw_fasta_dir, "%s");
+        $api ->retrieve_contigs_in_genomes(@group_genome_ids, $raw_fasta_dir, "%s");
+        print Dumper @group_genome_ids;
+        # my @genome_metadata_fields = (
+        #   "genome_name", "genome_id", "ncbi_taxon_id", "organism_name", "taxon_lineage_ids", "taxon_lineage_names",
+        #   "superkingdom", "kingdom", "phylum", "class", "order", "family", "genus", "species", "genome_status", "strain", 
+        #   "serovar", "isolation_source", "isolation_comments", "collection_date", "collection_year", "season", 
+        #   "isolation_country", "geographic_group", "geographic_country", "geographic_location", "host_name", "host_common_name",
+        #   "host_gender", "host_age", "lab_host", "passage", "sequencing_center", "sequencing_status", "sequencing_platform", "chromosomes", 
+        #   "plasmids", "contigs", "genome_length", "gc_content", "contig_l50", "contig_n50", "cds", "genome_quality", 
+        #   "antimicrobial_resistance", "antimicrobial_resistance_evidence", "bioproject_accession", "biosample_accession", "assembly_accession",
+        #   "sra_accession", "genbank_accession", "refseq_accession", "comments", "date_inserted", "date_modified", "public", "owner", "members", "",
+        #   "accession", "patric_id", "public", "genome_status", "state");
+        my @genome_metadata_fields = (
+        "genome_id", "genome_name", "strain", "genbank_accessions", "subtype", "lineage", "clade", "h1_clade_global", "h1_clade_us", "h5_clade", "host_group", 
+        "host_common_name", "host_scientific_name", "collection_year", "geographic_group", "isolation_country", "genome_status", "state_province", "state");
+        my @genome_group_metadata = $api->retrieve_genome_metadata(@group_genome_ids, \@genome_metadata_fields);
+        my $json_string = encode_json(@genome_group_metadata);
+        print Dumper @genome_group_metadata;
+        # write metdata to json
+        my $top = getcwd;
+        write_file("$top/genome_metadta.json", JSON::XS->new->pretty->canonical->encode(\@genome_group_metadata));
     }
 
+    
     # Prep the config and get ready to run Snakemake
     print STDERR "Starting the config json....\n";
     my $json_string = encode_json($params);
@@ -161,7 +144,7 @@ sub run
     my %config_vars;
     # temp
 
-        my $wf_dir = "$ENV{KB_TOP}/workflows/$ENV{KB_MODULE_DIR}";
+    my $wf_dir = "$ENV{KB_TOP}/workflows/$ENV{KB_MODULE_DIR}";
     if (! -d $wf_dir)
     {
 	$wf_dir = "$ENV{KB_TOP}/modules/$ENV{KB_MODULE_DIR}/workflow";
@@ -202,7 +185,6 @@ sub run
     # add the params to the config file
     $config_vars{params} = $params;
 
-    # write a config for the wrapper to parse
     # write config to current working directory to avoid finding tmp dir
     my $top = getcwd;
     write_file("$top/config.json", JSON::XS->new->pretty->canonical->encode(\%config_vars));

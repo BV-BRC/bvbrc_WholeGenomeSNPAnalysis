@@ -39,7 +39,6 @@ rule write_kSNP4_input_file:
     input:
         touchpoint = "{}/clean_fastas_complete.txt".format(work_data_dir)
     params:
-        # clean_fasta_dir = directory("{}/clean_fastas".format(clean_fasta_dir))
         clean_fasta_dir_ = clean_fasta_dir
     output:
         ksnp_in_file = "{}/ksnp4_input_file.txt".format(clean_fasta_dir) # writing to fasta dir because Kchooser4 is picky 
