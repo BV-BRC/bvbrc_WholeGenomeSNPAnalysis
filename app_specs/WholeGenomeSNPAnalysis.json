@@ -18,6 +18,25 @@
             "id": "input_genome_type"
         },
         {
+            "id":"min_fract",
+            "default": 0.5,
+            "required" : 0,
+            "enum": [
+              0,
+              0.1,
+              0.2,
+              0.3,
+              0.4,
+              0.5,
+              0.6,
+              0.7,
+              0.8,
+              0.9,
+              1,
+                ],
+            "desc": "Minimum fraction of genomes with locus. This is an optional parameter use dot calcuate a tree based on only SNP loci occuring in at least this fraction of genomes.",
+          },
+        {
         "desc": "Analysis type chewbbaca or ksnp4",
         "required": 1,
         "default": null,
