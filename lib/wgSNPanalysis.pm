@@ -76,7 +76,7 @@ sub run_WholeGenomeSNPanalysis
     }
     save_output_files($app, $output_dir);
     my $end_time = time();
-    printf STDERR "TOTAL TIME ELAPSED %.2f\n", $end_time - $begin_time ;
+    print STDERR "TOTAL TIME ELAPSED %.2f\n", $end_time - $begin_time ;
 }
 
 
@@ -98,32 +98,33 @@ sub run
     if ($params->{input_genome_type} eq 'genome_group')
     {
         my $genome_group_path = $params->{input_genome_group};
+        print($genome_group_path);
         my $group_name = basename($genome_group_path);
         my $api = P3DataAPI->new;
         # my $group_genome_ids = $api->retrieve_patric_ids_from_genome_group($genome_group_path);
         my @group_genome_ids = $api->retrieve_patric_ids_from_genome_group($genome_group_path);
-        # $api ->retrieve_contigs_in_genomes($group_genome_ids, $raw_fasta_dir, "%s");
+        # # $api ->retrieve_contigs_in_genomes($group_genome_ids, $raw_fasta_dir, "%s");
         $api ->retrieve_contigs_in_genomes(@group_genome_ids, $raw_fasta_dir, "%s");
-        print Dumper @group_genome_ids;
-        # my @genome_metadata_fields = (
-        #   "genome_name", "genome_id", "ncbi_taxon_id", "organism_name", "taxon_lineage_ids", "taxon_lineage_names",
-        #   "superkingdom", "kingdom", "phylum", "class", "order", "family", "genus", "species", "genome_status", "strain", 
-        #   "serovar", "isolation_source", "isolation_comments", "collection_date", "collection_year", "season", 
-        #   "isolation_country", "geographic_group", "geographic_country", "geographic_location", "host_name", "host_common_name",
-        #   "host_gender", "host_age", "lab_host", "passage", "sequencing_center", "sequencing_status", "sequencing_platform", "chromosomes", 
-        #   "plasmids", "contigs", "genome_length", "gc_content", "contig_l50", "contig_n50", "cds", "genome_quality", 
-        #   "antimicrobial_resistance", "antimicrobial_resistance_evidence", "bioproject_accession", "biosample_accession", "assembly_accession",
-        #   "sra_accession", "genbank_accession", "refseq_accession", "comments", "date_inserted", "date_modified", "public", "owner", "members", "",
-        #   "accession", "patric_id", "public", "genome_status", "state");
+        # # my @genome_metadata_fields = (
+        # #   "genome_name", "genome_id", "ncbi_taxon_id", "organism_name", "taxon_lineage_ids", "taxon_lineage_names",
+        # #   "superkingdom", "kingdom", "phylum", "class", "order", "family", "genus", "species", "genome_status", "strain", 
+        # #   "serovar", "isolation_source", "isolation_comments", "collection_date", "collection_year", "season", 
+        # #   "isolation_country", "geographic_group", "geographic_country", "geographic_location", "host_name", "host_common_name",
+        # #   "host_gender", "host_age", "lab_host", "passage", "sequencing_center", "sequencing_status", "sequencing_platform", "chromosomes", 
+        # #   "plasmids", "contigs", "genome_length", "gc_content", "contig_l50", "contig_n50", "cds", "genome_quality", 
+        # #   "antimicrobial_resistance", "antimicrobial_resistance_evidence", "bioproject_accession", "biosample_accession", "assembly_accession",
+        # #   "sra_accession", "genbank_accession", "refseq_accession", "comments", "date_inserted", "date_modified", "public", "owner", "members", "",
+        # #   "accession", "patric_id", "public", "genome_status", "state");
         my @genome_metadata_fields = (
-        "genome_id", "genome_name", "strain", "genbank_accessions", "subtype", "lineage", "clade", "h1_clade_global", "h1_clade_us", "h5_clade", "host_group", 
-        "host_common_name", "host_scientific_name", "collection_year", "geographic_group", "isolation_country", "genome_status", "state_province", "state");
+        "genome_id", "genome_name", "species", "strain", "genbank_accessions", "subtype", "lineage", "clade", "host_group", 
+        "host_common_name", "host_scientific_name", "collection_year", "geographic_group", "isolation_country", "genome_status", 
+        "state_province", "state");
         my @genome_group_metadata = $api->retrieve_genome_metadata(@group_genome_ids, \@genome_metadata_fields);
         my $json_string = encode_json(@genome_group_metadata);
-        print Dumper @genome_group_metadata;
+        print $json_string;
         # write metdata to json
         my $top = getcwd;
-        write_file("$top/genome_metadta.json", JSON::XS->new->pretty->canonical->encode(\@genome_group_metadata));
+        write_file("$top/genome_metadata.json", JSON::XS->new->pretty->canonical->encode(\@genome_group_metadata));
     }
 
     
