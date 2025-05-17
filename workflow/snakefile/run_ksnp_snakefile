@@ -21,7 +21,7 @@ sys.stderr.write(msg)
 
 current_directory = os.getcwd()
 # Load the JSON data
-with open('{}/config.json'.format(current_directory)) as f:
+with open("{}/config.json".format(current_directory)) as f:
     data = json.load(f)
 clean_fasta_dir = data["clean_data_dir"]
 work_data_dir = data["work_data_dir"]
@@ -32,7 +32,8 @@ rule_all_list = [
                 # "{}/kSNP_annotation_command_touchpoint.txt".format(current_directory),
                 "{}/phylo_xml_trees_touchpoint.txt".format(work_data_dir),
                 "{}/organize_files_touchpoint.txt".format(work_data_dir),
-                # "{}/PLOTLY PLACEHOLDER".format(work_data_dir),
+                "{}/kSNPdist.report".format(work_data_dir),
+                # # "{}/PLOTLY PLACEHOLDER".format(work_data_dir),
                 ]
 
 rule all:
@@ -55,7 +56,8 @@ rule run_kSNP4:
         ksnp_in_file = "{}/ksnp4_input_file.txt".format(clean_fasta_dir)
     params:
         optimum_k = read_k_value("{}/optimum_k.txt".format(work_data_dir)),
-        out_dir = data["work_data_dir"]
+        out_dir = data["work_data_dir"],
+        majority_threshold = data["params"]["majority-threshold"]
     output:
         touchpoint = "{}/kSNP_command_touchpoint.txt".format(work_data_dir)
 
@@ -67,7 +69,7 @@ rule run_kSNP4:
             -in {input.ksnp_in_file}\
             -outdir {params.out_dir} \
             -k {params.optimum_k} \
-            -min_frac 0.5 \
+            -min_frac {params.majority_threshold} \
             -core \
             -NJ \
             -ML \
@@ -111,7 +113,7 @@ rule run_kSNP4:
 rule convert_trees_to_phyloxml:
     input:
         touchpoint = "{}/kSNP_command_touchpoint.txt".format(work_data_dir),
-        config = '{}/config.json'.format(current_directory)
+        config = "{}/config.json".format(current_directory)
     output:
         touchpoint = "{}/phylo_xml_trees_touchpoint.txt".format(work_data_dir)
     shell:
@@ -124,7 +126,7 @@ rule convert_trees_to_phyloxml:
 rule organize_files:
     input:
         touchpoint = "{}/phylo_xml_trees_touchpoint.txt".format(work_data_dir),
-        config = '{}/config.json'.format(current_directory)
+        config = "{}/config.json".format(current_directory)
     output:
         touchpoint = "{}/organize_files_touchpoint.txt".format(work_data_dir)
     shell:
@@ -134,15 +136,30 @@ rule organize_files:
         touch {output.touchpoint}
         """
 
+# dev!
 rule run_kdist:
     input:
-        snp_all_matrix = "{}/SNPs_all_matrix.fasta".format(work_data_dir)
+        core_SNPs_matrix = "{}/core_SNPs_matrix.fasta".format(work_data_dir),
+        config = "{}/config.json".format(current_directory),
+        metadata = "{}/genome_metadata.json".format(current_directory)
+    params:
+        work_data_dir = directory(data["work_data_dir"])
+
     output:
         dist_matrix = "{}/kSNPdist.matrix".format(work_data_dir),
         dist_report = "{}/kSNPdist.report".format(work_data_dir),
+        html_out = "{}/snp_distance_heatmap.html".format(work_data_dir)
     shell:
         """
-        /home/nbowers/bvbrc-dev/dev_container/tools/kSNP4.1pkg/kSNPdist {input.snp_all_matrix}
+        /home/nbowers/bvbrc-dev/dev_container/tools/kSNP4.1pkg/kSNPdist {input.core_SNPs_matrix}
 
-        whole_genome_snp_utils write-snp-distance-heatmap
+        mv kSNPdist.matrix {params.work_data_dir}
+
+        sed -i 's/_/./g' kSNPdist.matrix
+
+        sed -i 's/_/./g' kSNPdist.report
+
+        mv kSNPdist.report {params.work_data_dir}
+
+        whole_genome_snp_utils write-snp-distance-heatmap {input.config} {output.dist_report} {output.html_out}
         """
