@@ -145,7 +145,7 @@ def organize_files_by_type(work_dir, destination_dir):
             os.makedirs(majority_dir, exist_ok=True)
             shutil.copy(file_path, majority_dir)
         # Capture specifically SNPs_in_majority0.5 where 5 could be any integer 0-9 without anything else
-        if len(filename) == 19 and filename.startswith("SNPs_in_majority0."):
+        if len(filename) == 19 and filename.startswith("SNPs_in_majority0.") or filename == "majority_snp_distance_heatmap.html":
             group = infer_output_type(filename)
             majority_dir = os.path.join(destination_dir, group)
             os.makedirs(majority_dir, exist_ok=True)
