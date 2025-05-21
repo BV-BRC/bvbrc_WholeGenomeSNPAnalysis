@@ -33,8 +33,8 @@ def copy_new_file(clean_fasta_dir, new_name, filename, original_path):
         print("Copying: {}".format(filename))
         shutil.copy2(original_path, clean_path) 
 
-def create_metadata_table(metadata, tsv_out, html_output_path):
-    with open(metadata) as f:
+def create_metadata_table(metadata_json, tsv_out, html_output_path):
+    with open(metadata_json) as f:
         json_data = json.load(f)
 
     # # df = pd.read_json(metadata)
@@ -91,7 +91,16 @@ def infer_output_type(filename):
     elif "SNPs_all" in filename:
         return "All_SNPs"
 
+# def infer_ree_type(filename):
+#     if "core_SNPs" in filename:
+#         return "Core_SNPs"
+#     elif "majority" in filename:
+#         return "Majority_SNPs"
+#     elif "SNPs_all" in filename:
+#         return "All_SNPs"
+
 def organize_files_by_type(work_dir, destination_dir):
+    print(destination_dir)
     if not os.path.exists(work_dir):
         sys.stderr.write("Work directory, {}, does not exist".format(work_dir))
         return
@@ -106,7 +115,7 @@ def organize_files_by_type(work_dir, destination_dir):
             continue
         
         # Sort files into directories according to the first word
-        if firstword == "All" or filename.startswith("SNPs_all"):
+        if firstword == "All" or filename.startswith("SNPs_all") or filename == "all_snp_distance_heatmap.html":
             All_SNPs_dir = os.path.join(destination_dir, "All_SNPs")
             os.makedirs(All_SNPs_dir, exist_ok=True)
             shutil.copy(file_path, All_SNPs_dir)
@@ -117,7 +126,7 @@ def organize_files_by_type(work_dir, destination_dir):
             cluster_dir = os.path.join(destination_dir, group, "Cluster_Information")
             os.makedirs(cluster_dir, exist_ok=True)
             shutil.copy(file_path, cluster_dir)
-        if firstword == "core" or firstword == "nonCore":
+        if firstword == "core" or firstword == "nonCore" or filename == "core_snp_distance_heatmap.html":
             core_snp_dir = os.path.join(destination_dir, "Core_SNPs")
             os.makedirs(core_snp_dir, exist_ok=True)
             shutil.copy(file_path, core_snp_dir)
@@ -145,26 +154,42 @@ def organize_files_by_type(work_dir, destination_dir):
             VCFs_dir = os.path.join(destination_dir, "VCFs")
             os.makedirs(VCFs_dir, exist_ok=True)
             shutil.copy(file_path, VCFs_dir)
+
     # Trees get a seperate loop
     clean_tree_dir = os.path.join(work_dir,"clean_trees")
     for filename in os.listdir(clean_tree_dir):
         file_path = os.path.join(clean_tree_dir, filename)
         group = infer_output_type(filename)
-        tree_dir = os.path.join(destination_dir, group)
-        os.makedirs(tree_dir, exist_ok=True)
-
-        name, ext = os.path.splitext(filename)
-
-        if ext == ".phyloxml":
-            shutil.copy(file_path, tree_dir)
-        elif ext == ".tre":
-            # Newick Trees going in their own subdirectory
-            newick_tree_dir = os.path.join(tree_dir, "Newick_Files")
-            os.makedirs(newick_tree_dir, exist_ok=True)
-            shutil.copy(file_path, newick_tree_dir)
+        if filename == "tree_AlleleCounts.parsimony.tre" or filename == "tree_AlleleCounts.parsimony.tre.phyloxml":
+            # print("found".format(file_path))
+            pass
         else:
-            msg = "UNKNOWN TREE not uploaded in output dir: {}".format(file_path)
-            sys.stderr.write(msg)
+            if group == "All_SNPs" or group == "Core_SNPs":
+                tree_dir = os.path.join(destination_dir, group, "Trees")
+                if filename == "tree_tipAlleleCounts.SNPs_all.parsimony.tre":
+                    group_dir = os.path.join(destination_dir, "All_SNPs")
+                    shutil.copy(file_path, group_dir)
+                if filename == "tree_tipAlleleCounts.core_SNPs.parsimony.tre":
+                    shutil.copy(file_path, "Core_SNPs")
+                if filename == "tree_AlleleCounts.SNPs_all.parsimony.NodeLabel.tre":
+                    group_dir = os.path.join(destination_dir, "All_SNPs")
+                    shutil.copy(file_path, group_dir)
+                if filename == "tree_AlleleCounts.core_SNPs.parsimony.NodeLabel.tre":
+                    shutil.copy(file_path, "Core_SNPs")
+                os.makedirs(tree_dir, exist_ok=True)
+
+                name, ext = os.path.splitext(filename)
+
+                if ext == ".phyloxml":
+                    shutil.copy(file_path, tree_dir)
+                elif ext == ".tre":
+                    # Newick Trees going in their own subdirectory
+                    newick_tree_dir = os.path.join(tree_dir, "Newick_Files")
+                    os.makedirs(newick_tree_dir, exist_ok=True)
+                    shutil.copy(file_path, newick_tree_dir)
+                else:
+                    msg = "UNKNOWN TREE not uploaded in output dir: {}".format(file_path)
+                    sys.stderr.write(msg)
 
 def parse_optimum_k(kchooser_report):
     with open(kchooser_report, 'r') as file:
@@ -181,285 +206,80 @@ def run_newick_to_phyloxml(clean_nwk):
         msg = "{}".format(result)
         sys.stderr.write(msg)
 
-def snp_distance_heatmap(config, ksnp_dist_report, output_html, metadata):
-    # get data tresholds from config
-    with open(config) as f:
-        data = json.load(f)
-    min_mid_linkage = data["params"]["min_mid_linkage"]
-    max_mid_linkage = data["params"]["max_mid_linkage"]
-    # Set up snp dist data
-    heatmap_df = pd.read_csv(ksnp_dist_report, sep='\t', header=None)
-    heatmap_df.columns = ["value", "genome1", "genome2"]
-    heatmap_df[['genome1', 'genome2']] = heatmap_df[['genome1', 'genome2']].astype(str)
-    print("below is the heatmap with the default data")
-    print(heatmap_df)
-     # NB new testing
-    # Load the JSON metadata
-    with open('genome_metadata.json') as f:
-        data = json.load(f)
-    metadata_df = pd.DataFrame(data)
-    metadata_df = metadata_df.fillna("NA")
-    print(metadata_df.columns)
-    tmp_df = metadata_df.drop('genome_id', axis=1)
-    metadata_fields = tmp_df.columns
-    print(metadata_fields)
-    metadata_df = metadata_df.fillna('NA')
-    label_mappings = {field: metadata_df.set_index('genome_id')[field].to_dict() for field in metadata_fields}
 
-    # Initial labels
-    initial_labels = heatmap_df.columns
-    # Plotly figure
-    fig = go.Figure(data=go.Heatmap(
-        z=heatmap_df.values,
-        x=initial_labels,
-        y=initial_labels,
-        colorscale='Reds',
-        colorbar=dict(title="SNP Distance")
+def snp_distance_heatmap(config, ksnp_dist_report, output_html):
+    # Set up data
+    df = pd.read_csv(ksnp_dist_report, sep='\t', header=None)
+    # df.columns = ['value', 'genome1', 'genome2']
+    df.columns = ["value", "genome1", "genome2"]
+    pivoted = df.pivot(index="genome1", columns="genome2", values="value")
+
+   # Define zmin/zmax and map color stops using SNP value thresholds
+    zmin, zmax = 0, df["value"].max()
+
+    # Normalize real values to 0–1 range for color scale
+    def normalize(v): return (v - zmin) / (zmax - zmin)
+
+    color_scale = [
+        [normalize(0), "crimson"],
+        [normalize(10), "yellow"],
+        [normalize(40), "mistyrose"],
+        [1.0, "white"]
+    ]
+
+    # Plot heatmap
+    fig = px.imshow(pivoted,
+                    labels=dict(x="Genome", y="Genome", color="SNP Distance"),
+                    x=pivoted.columns,
+                    y=pivoted.index,
+                    color_continuous_scale=color_scale,
+                    zmin=zmin,
+                    zmax=zmax,
+                    aspect='auto')
+
+    # Manually add scatter traces for the legend
+    fig.add_trace(go.Scatter(
+        x=[None], y=[None],
+        mode='markers',
+        marker=dict(size=10, color='crimson'),
+        name='0–10 Strong Linkage'
     ))
 
-    # Update menu for toggling axis labels
-    updatemenus = [
-        dict(
-            buttons=[{
-                'label': 'genome_id',
-                'method': 'update',
-                'args': [{'x': list(heatmap_df.columns), 'y': list(heatmap_df.index)}]
-            }] + [
-                {
-                    'label': field,
-                    'method': 'update',
-                    'args': [{'x': pd.Series(heatmap_df.columns).map(label_mappings[field]).fillna('NA'),
-                            'y': pd.Series(heatmap_df.index).map(label_mappings[field]).fillna('NA')}]
-                }
-                for field in metadata_fields
-            ],
-            direction='down',
-            showactive=True
-        )
-    ]
+    fig.add_trace(go.Scatter(
+        x=[None], y=[None],
+        mode='markers',
+        marker=dict(size=10, color='yellow'),
+        name='10–40 Mid Linkage'
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=[None], y=[None],
+        mode='markers',
+        marker=dict(size=10, color='mistyrose'),
+        name='>40 Weak Linkage'
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=[None], y=[None],
+        mode='markers',
+        marker=dict(size=10, color='white'),
+        name='Max distance'
+    ))
     fig.update_layout(
-    updatemenus=updatemenus,
-    title="Heatmap with Metadata Toggle",
-    xaxis_title="Genome",
-    yaxis_title="Genome"
-    )
+    legend=dict(
+        x=0,        # left (0.0), right (1.0)
+        y=0.0,        # top (1.0), bottom (0.0)
+        xanchor="left",
+        yanchor="bottom",
+        bgcolor="rgba(255,255,255,0.6)",  # semi-transparent background
+        bordercolor="black",
+        borderwidth=1
+    ))
+    fig.update_layout(title="SNP Count Heatmap")
     fig.update_yaxes(showgrid=True, tickangle=45)
     fig.update_xaxes(showgrid=True, tickangle=45)
     offline.plot(fig, filename=output_html, auto_open=False)
-    fig.write_html("heatmap_for_report.html", include_plotlyjs=False)
     print('complete')
-
-    # # # Create heatmap matrix
-    # # genomes = sorted(set(heatmap_df['genome1']).union(set(heatmap_df['genome2'])))
-    # # heatmap_df = pd.DataFrame(np.nan, index=genomes, columns=genomes)
-
-    # # for _, row in heatmap_df.iterrows():
-    # #     heatmap_df.loc[row['genome1'], row['genome2']] = row['value']
-    # #     heatmap_df.loc[row['genome2'], row['genome1']] = row['value']
-
-    # # np.fill_diagonal(heatmap_df.values, 0)
-    # # Merge with metadata
-    # # metadata_fields = metadata_df.columns[1:]
-    # # metadata_df = metadata_df.fillna('NA')
-    # label_mappings = {field: metadata_df.set_index('genome_id')[field].to_dict() for field in metadata_fields}
-
-    # # Initial labels
-    # initial_labels = heatmap_df.columns
-
-    # # Plotly figure
-    # fig = go.Figure(data=go.Heatmap(
-    #     z=heatmap_df.values,
-    #     x=initial_labels,
-    #     y=initial_labels,
-    #     colorscale='Reds',
-    #     colorbar=dict(title="SNP Distance")
-    # ))
-
-    # # Update menu for toggling axis labels
-    # updatemenus = [
-    #     dict(
-    #         buttons=[{
-    #             'label': 'genome_id',
-    #             'method': 'update',
-    #             'args': [{'x': list(heatmap_df.columns), 'y': list(heatmap_df.index)}]
-    #         }] + [
-    #             {
-    #                 'label': field,
-    #                 'method': 'update',
-    #                 'args': [{'x': pd.Series(heatmap_df.columns).map(label_mappings[field]).fillna('NA'),
-    #                         'y': pd.Series(heatmap_df.index).map(label_mappings[field]).fillna('NA')}]
-    #             }
-    #             for field in metadata_fields
-    #         ],
-    #         direction='down',
-    #         showactive=True
-    #     )
-    # ]
-    
-    # fig.update_layout(
-    # updatemenus=updatemenus,
-    # title="Heatmap with Metadata Toggle",
-    # xaxis_title="Genome",
-    # yaxis_title="Genome"
-    # )
-    # fig.update_yaxes(showgrid=True, tickangle=45)
-    # fig.update_xaxes(showgrid=True, tickangle=45)
-    # offline.plot(fig, filename=output_html, auto_open=False)
-    # fig.write_html("heatmap_for_report.html", include_plotlyjs=False)
-    # print('complete')
-
-    ######
-    # # old can delete
-    # # # try making it with plostly go instead of px in order to have the drop down
-    # # metadata_columns = [col for col in metadata_df.columns if col != 'genome_id']
-    # # print(metadata_df.columns)
-    # # print(metadata_columns)
-    # # print(type())
-
-    # trying plotly px
-    # # Initial labels are 'genome_id'
-    # initial_labels = metadata_df['genome_id']
-    # ### below is dev heatmap trying for metadata dropdown ###
-    # # Plot heatmap
-    # fig = px.imshow(pivoted,
-    # # fig = px.imshow(heatmap_og_df,
-    #                 labels=dict(x="Genome", y="Genome", color="SNP Distance"),
-    #                 # x=pivoted.columns,
-    #                 # y=pivoted.index,
-    #                 x=initial_labels,
-    #                 y=initial_labels,
-    #                 color_continuous_scale=color_scale,
-    #                 zmin=zmin,
-    #                 zmax=zmax,
-    #                 aspect='auto')
-    # # Prepare buttons for each metadata field to update axis tick labels
-    # buttons = []
-    # for field in metadata_df.columns:
-    #     labels = metadata_df[field].tolist()
-    #     buttons.append(
-    #         dict(
-    #             label=field,
-    #             method='update',
-    #             args=[{'x': [labels], 'y': [labels]}]
-    #         )
-    #     )
-    # fig.add_trace(go.Scatter(
-    #     x=[None], y=[None],
-    #     mode='markers',
-    #     marker=dict(size=10, color='crimson'),
-    #     name='0–{} Strong Linkage'.format(min_mid_linkage)
-    # ))
-
-    # fig.add_trace(go.Scatter(
-    #     x=[None], y=[None],
-    #     mode='markers',
-    #     marker=dict(size=10, color='yellow'),
-    #     name='10–{} Mid Linkage'.format(max_mid_linkage)
-    # ))
-
-    # fig.add_trace(go.Scatter(
-    #     x=[None], y=[None],
-    #     mode='markers',
-    #     marker=dict(size=10, color='mistyrose'),
-    #     name='>{} Weak Linkage'.format(max_mid_linkage)
-    # ))
-
-    # fig.add_trace(go.Scatter(
-    #     x=[None], y=[None],
-    #     mode='markers',
-    #     marker=dict(size=10, color='white'),
-    #     name='Max distance'
-    # ))
-    # fig.update_layout(
-    # legend=dict(
-    #     x=0,        # left (0.0), right (1.0)
-    #     y=0.0,        # top (1.0), bottom (0.0)
-    #     xanchor="left",
-    #     yanchor="bottom",
-    #     bgcolor="rgba(255,255,255,0.6)",  # semi-transparent background
-    #     bordercolor="black",
-    #     borderwidth=1
-    # ))
-    # # fig.update_layout(title="SNP Count Heatmap")
-    # # Add dropdown menu to toggle axis labels
-    # fig.update_layout(
-    #     updatemenus=[
-    #         dict(
-    #             buttons=buttons,
-    #             direction='down',
-    #             pad={"r": 10, "t": 10},
-    #             showactive=True,
-    #             x=0.5,
-    #             xanchor='center',
-    #             y=1.1,
-    #             yanchor='top'
-    #         )
-    #     ],
-    #     title="Heatmap with Toggleable Metadata Labels",
-    #     height=600,
-    #     width=700
-    # )
-
-    # fig.update_yaxes(showgrid=True, tickangle=45)
-    # fig.update_xaxes(showgrid=True, tickangle=45)
-    # offline.plot(fig, filename=output_html, auto_open=False)
-    # fig.write_html("heatmap_for_report.html", include_plotlyjs=False)
-    # print('complete')
-
-    # ### below is original heatmap pre metadata dropdown ###
-    # # Plot heatmap
-    # fig = px.imshow(pivoted,
-    #                 labels=dict(x="Genome", y="Genome", color="SNP Distance"),
-    #                 x=pivoted.columns,
-    #                 y=pivoted.index,
-    #                 color_continuous_scale=color_scale,
-    #                 zmin=zmin,
-    #                 zmax=zmax,
-    #                 aspect='auto')
-    
-    # fig.add_trace(go.Scatter(
-    #     x=[None], y=[None],
-    #     mode='markers',
-    #     marker=dict(size=10, color='crimson'),
-    #     name='0–{} Strong Linkage'.format(min_mid_linkage)
-    # ))
-
-    # fig.add_trace(go.Scatter(
-    #     x=[None], y=[None],
-    #     mode='markers',
-    #     marker=dict(size=10, color='yellow'),
-    #     name='10–{} Mid Linkage'.format(max_mid_linkage)
-    # ))
-
-    # fig.add_trace(go.Scatter(
-    #     x=[None], y=[None],
-    #     mode='markers',
-    #     marker=dict(size=10, color='mistyrose'),
-    #     name='>{} Weak Linkage'.format(max_mid_linkage)
-    # ))
-
-    # fig.add_trace(go.Scatter(
-    #     x=[None], y=[None],
-    #     mode='markers',
-    #     marker=dict(size=10, color='white'),
-    #     name='Max distance'
-    # ))
-    # fig.update_layout(
-    # legend=dict(
-    #     x=0,        # left (0.0), right (1.0)
-    #     y=0.0,        # top (1.0), bottom (0.0)
-    #     xanchor="left",
-    #     yanchor="bottom",
-    #     bgcolor="rgba(255,255,255,0.6)",  # semi-transparent background
-    #     bordercolor="black",
-    #     borderwidth=1
-    # ))
-    # fig.update_layout(title="SNP Count Heatmap")
-    # fig.update_yaxes(showgrid=True, tickangle=45)
-    # fig.update_xaxes(showgrid=True, tickangle=45)
-    # offline.plot(fig, filename=output_html, auto_open=False)
-    # fig.write_html("heatmap_for_report.html", include_plotlyjs=False)
-    # print('complete')
 
 def tsv_to_html(df, json_data, html_output_path):
     """
@@ -574,104 +394,6 @@ def tsv_to_html(df, json_data, html_output_path):
     except Exception as e:
         print(f"Error: {e}")
 
-# def trying_together(table_json_data):
-#     html_template =    """<!DOCTYPE html>
-#                         <html lang="en">
-#                         <head>
-#                             <meta charset="UTF-8">
-#                             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-#                             <title>Heatmap and Interactive Table Viewer</title>
-#                             <script src="https://cdn.plot.ly/plotly-2.16.1.min.js"></script>
-#                             <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
-#                             <style>
-#                                 body {{
-#                                     font-family: Arial, sans-serif;
-#                                     margin: 20px;
-#                                     display: flex;
-#                                     gap: 20px;
-#                                 }}
-#                                 heatmap {{
-#                                     width: 50%;
-#                                     height: 600px;
-#                                 }}
-#                                 dataTable {{
-#                                     width: 50%;
-#                                 }}
-#                             </style>
-#                         </head>
-#                         <body>
-
-#                             <div id="heatmap"></div>
-
-#                             <table id="dataTable" class="display" style="width:100%">
-#                                 <thead id="tableHead"></thead>
-#                                 <tbody id="tableBody"></tbody>
-#                             </table>
-
-#                             <!-- jQuery -->
-#                             <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-#                             <!-- DataTables -->
-#                             <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
-
-#                             <script>
-#                                 // Replace this with your actual JSON data
-#                                 const jsonData = JSON.parse(String.raw`{{{{json_data_str}}}}`);
-
-#                                 // Generate Heatmap Data
-#                                 const headers = Object.keys(jsonData[0]).filter(key => key !== 'ID');
-#                                 const values = jsonData.map(row => headers.map(header => row[header]));
-#                                 const rowLabels = jsonData.map(row => row.ID);
-
-#                                 Plotly.newPlot('heatmap', [{{
-#                                     z: values,
-#                                     x: headers,
-#                                     y: rowLabels,
-#                                     type: 'heatmap',
-#                                     colorscale: 'Viridis'
-#                                 }}], {{
-#                                     title: 'Heatmap Representation',
-#                                     height: 600
-#                                 }});
-
-#                                 // Populate Table
-#                                 const tableHead = document.getElementById('tableHead');
-#                                 const tableBody = document.getElementById('tableBody');
-
-#                                 // Create header
-#                                 const headRow = document.createElement('tr');
-#                                 Object.keys(jsonData[0]).forEach(header => {{
-#                                     const th = document.createElement('th');
-#                                     th.textContent = header;
-#                                     headRow.appendChild(th);
-#                                 }});
-#                                 tableHead.appendChild(headRow);
-
-#                                 // Create rows
-#                                 jsonData.forEach(row => {{
-#                                     const tr = document.createElement('tr');
-#                                     Object.values(row).forEach(value => {{
-#                                         const td = document.createElement('td');
-#                                         td.textContent = value;
-#                                         tr.appendChild(td);
-#                                     }});
-#                                     tableBody.appendChild(tr);
-#                                 }});
-
-#                                 // Initialize DataTables
-#                                 $('#dataTable').DataTable({{
-#                                     pageLength: 5,
-#                                     lengthMenu: [5, 10, 20, 50]
-#                                 }});
-
-#                             </script>
-#                         </body>
-#                         </html>
-#                         """.format(table_json_data)
-#     # Write the HTML output to the specified file path
-#     with open("test_together.html", "w") as file:
-#         file.write(html_template)
-
-
 @click.group()
 def cli():
     """ This script supports the Whole Genome SNP service with multiple commands."""
@@ -693,7 +415,6 @@ def clean_fasta_filenames(service_config):
 
 @cli.command()
 @click.argument("service_config")
-
 def convert_to_phyloxml_trees(service_config):
     """Use genome IDs in the tree files for phyloxml to connect the existing metadata. Iterate through each tree file to remove kSNP4 formating restrictions."""
     with open(service_config) as file:
@@ -710,8 +431,7 @@ def convert_to_phyloxml_trees(service_config):
             continue
         clean_tree_dir = os.path.join(work_dir, "clean_trees")
         os.makedirs(clean_tree_dir, exist_ok=True)
-        firstword = filename.split("_")[0]
-        if firstword == "tree" or firstword == "tree.SNPs":
+        if "tree" in filename:
             clean_nwk_path = os.path.join(clean_tree_dir, filename)
             edit_newick_genome_id(file_path, clean_nwk_path)
             run_newick_to_phyloxml(clean_nwk_path)
@@ -736,16 +456,16 @@ def parse_kchooser_report(kchooser_report):
 @click.argument("config")
 @click.argument("ksnp_dist_report")
 @click.argument("output_html")
-@click.argument("metadata")
-def write_snp_distance_heatmap(config, ksnp_dist_report, output_html, metadata):
+@click.argument("metadata_json")
+def write_snp_distance_heatmap(config, ksnp_dist_report, output_html, metadata_json):
     """ Write a heatmap displaying snp level differences between genomes using the output from kSNPdist. kSNPDist only works with the SNPs all matrix fasta file. This command uses the kSNPdist.report."""
-    snp_distance_heatmap(config, ksnp_dist_report, output_html, metadata)
+    snp_distance_heatmap(config, ksnp_dist_report, output_html)
 
 @cli.command()
-@click.argument("metadata")
+@click.argument("metadata_json")
 @click.argument("tsv_out")
 @click.argument("html_output_path")
-def create_metadata_table_output(metadata, tsv_out, html_output_path):
+def create_metadata_table_output(metadata_json, tsv_out, html_output_path):
     """ Write an interactive view and flat CSV file with all the metadata about this genome gorup. """
     table_json_data = create_metadata_table(metadata, tsv_out, html_output_path)
     trying_together(table_json_data)
