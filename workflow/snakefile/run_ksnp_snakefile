@@ -1,3 +1,7 @@
+#### NICOLE ALERT ####
+# UPDATE THE PATH TO KSNPDIST ONCE IN THE CONTAINER
+#### NICOLE ALERT ####
+
 import json
 import os
 
@@ -16,18 +20,24 @@ msg = 'Checkpoint 5: snakefile command recieved - kSNP4 analysis \n'
 sys.stderr.write(msg)
 
 current_directory = os.getcwd()
+print(current_directory)
 # Load the JSON data
-with open('{}/config.json'.format(current_directory)) as f:
+with open("{}/config.json".format(current_directory)) as f:
     data = json.load(f)
 clean_fasta_dir = data["clean_data_dir"]
 work_data_dir = data["work_data_dir"]
+majority_threshold = data["params"]["majority-threshold"]
+
 
 rule_all_list = [
                 # "{}/annotated_genome_list.txt".format(current_directory),
                 "{}/kSNP_command_touchpoint.txt".format(work_data_dir),
                 # "{}/kSNP_annotation_command_touchpoint.txt".format(current_directory),
                 "{}/phylo_xml_trees_touchpoint.txt".format(work_data_dir),
-                "{}/organize_files_touchpoint.txt".format(work_data_dir)
+                "{}/organize_files_touchpoint.txt".format(work_data_dir),
+                "{}/all_snp_distance_heatmap.html".format(work_data_dir),
+                "{}/core_snp_distance_heatmap.html".format(work_data_dir),
+                "{}/majority_ksnp_dist_touchpoint.txt".format(work_data_dir)
                 ]
 
 rule all:
@@ -50,9 +60,12 @@ rule run_kSNP4:
         ksnp_in_file = "{}/ksnp4_input_file.txt".format(clean_fasta_dir)
     params:
         optimum_k = read_k_value("{}/optimum_k.txt".format(work_data_dir)),
-        out_dir = data["work_data_dir"]
+        out_dir = data["work_data_dir"],
+        majority_threshold = data["params"]["majority-threshold"]
     output:
-        touchpoint = "{}/kSNP_command_touchpoint.txt".format(work_data_dir)
+        touchpoint = "{}/kSNP_command_touchpoint.txt".format(work_data_dir),
+        all_SNPs_matrix = "{}/SNPs_all_matrix.fasta".format(work_data_dir),
+        core_SNPs_matrix = "{}/core_SNPs_matrix.fasta".format(work_data_dir)
 
     shell:
         """
@@ -62,6 +75,7 @@ rule run_kSNP4:
             -in {input.ksnp_in_file}\
             -outdir {params.out_dir} \
             -k {params.optimum_k} \
+            -min_frac {params.majority_threshold} \
             -core \
             -NJ \
             -ML \
@@ -105,7 +119,7 @@ rule run_kSNP4:
 rule convert_trees_to_phyloxml:
     input:
         touchpoint = "{}/kSNP_command_touchpoint.txt".format(work_data_dir),
-        config = '{}/config.json'.format(current_directory)
+        config = "{}/config.json".format(current_directory)
     output:
         touchpoint = "{}/phylo_xml_trees_touchpoint.txt".format(work_data_dir)
     shell:
@@ -117,14 +131,102 @@ rule convert_trees_to_phyloxml:
 
 rule organize_files:
     input:
-        # touchpoint = "{}/kSNP_command_touchpoint.txt".format(work_data_dir),
         touchpoint = "{}/phylo_xml_trees_touchpoint.txt".format(work_data_dir),
-        config = '{}/config.json'.format(current_directory)
+        config = "{}/config.json".format(current_directory)
     output:
         touchpoint = "{}/organize_files_touchpoint.txt".format(work_data_dir)
     shell:
         """
         whole_genome_snp_utils organize-output-files {input.config}
+
+        touch {output.touchpoint}
+        """
+
+# dev!
+rule run_kdist_core:
+    input:
+        "{}/kSNP_command_touchpoint.txt".format(work_data_dir),
+        core_SNPs_matrix = "{}/core_SNPs_matrix.fasta".format(work_data_dir),
+        config = "{}/config.json".format(current_directory),
+        metadata = "{}/genome_metadata.json".format(current_directory)
+    params:
+        tmp_dist_matrix ="{}/kSNPdist.matrix".format(current_directory),
+        tmp_dist_report ="{}/kSNPdist.report".format(current_directory),
+    output:
+        dist_matrix = "{}/core_kSNPdist.report".format(current_directory),
+        dist_report = "{}/core_kSNPdist.report".format(work_data_dir),
+        html_out = "{}/core_snp_distance_heatmap.html".format(work_data_dir)
+    shell:
+        """
+        kSNPdist {input.core_SNPs_matrix}
+
+                sed -i 's/_/./g' {params.tmp_dist_matrix}
+
+        sed -i 's/_/./g' {params.tmp_dist_report}
+
+        mv {params.tmp_dist_report} {output.dist_report}
+
+        mv {params.tmp_dist_matrix} {output.dist_matrix}
+
+        whole_genome_snp_utils write-snp-distance-heatmap {input.config} {output.dist_report} {output.html_out} {input.metadata}
+        """
+
+rule run_kdist_all:
+    input:
+        "{}/kSNP_command_touchpoint.txt".format(work_data_dir),
+        all_SNPs_matrix = "{}/SNPs_all_matrix.fasta".format(work_data_dir),
+        config = "{}/config.json".format(current_directory),
+        metadata = "{}/genome_metadata.json".format(current_directory)
+    params:
+        tmp_dist_matrix ="{}/kSNPdist.matrix".format(current_directory),
+        tmp_dist_report ="{}/kSNPdist.report".format(current_directory),
+    output:
+        dist_matrix = "{}/all_kSNPdist.report".format(current_directory),
+        dist_report = "{}/all_kSNPdist.report".format(work_data_dir),
+        html_out = "{}/all_snp_distance_heatmap.html".format(work_data_dir)
+    shell:
+        """
+        kSNPdist {input.all_SNPs_matrix}
+
+        sed -i 's/_/./g' {params.tmp_dist_matrix}
+
+        sed -i 's/_/./g' {params.tmp_dist_report}
+
+        mv {params.tmp_dist_report} {output.dist_report}
+
+        mv {params.tmp_dist_matrix} {output.dist_matrix}
+
+        whole_genome_snp_utils write-snp-distance-heatmap {input.config} {output.dist_report} {output.html_out} {input.metadata}
+        """
+
+# params because Majority 
+rule run_kdist_majority:
+    input:
+        "{}/kSNP_command_touchpoint.txt".format(work_data_dir),
+        config = "{}/config.json".format(current_directory),
+        metadata = "{}/genome_metadata.json".format(current_directory)
+    params:
+        majority_SNPs_matrix = "{}/SNPs_in_majority{}_matrix.fasta".format(work_data_dir, majority_threshold),
+        tmp_dist_matrix ="{}/kSNPdist.matrix".format(current_directory),
+        tmp_dist_report ="{}/kSNPdist.report".format(current_directory),
+        dist_matrix = "{}/majority_kSNPdist.report".format(current_directory),
+        dist_report = "{}/majority_kSNPdist.report".format(work_data_dir),
+        html_out = "{}/majority_snp_distance_heatmap.html".format(work_data_dir)
+    output:
+        touchpoint = "{}/majority_ksnp_dist_touchpoint.txt".format(work_data_dir)
+    shell:
+        """
+        kSNPdist {params.majority_SNPs_matrix}
+
+        sed -i 's/_/./g' {params.tmp_dist_matrix}
+
+        sed -i 's/_/./g' {params.tmp_dist_report}
+
+        cp {params.tmp_dist_report} {params.dist_report}
+
+        cp {params.tmp_dist_matrix} {params.dist_matrix}
+
+        whole_genome_snp_utils write-snp-distance-heatmap {input.config} {params.dist_report} {params.html_out} {input.metadata}
 
         touch {output.touchpoint}
         """
