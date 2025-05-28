@@ -91,16 +91,7 @@ def infer_output_type(filename):
     elif "SNPs_all" in filename:
         return "All_SNPs"
 
-# def infer_ree_type(filename):
-#     if "core_SNPs" in filename:
-#         return "Core_SNPs"
-#     elif "majority" in filename:
-#         return "Majority_SNPs"
-#     elif "SNPs_all" in filename:
-#         return "All_SNPs"
-
 def organize_files_by_type(work_dir, destination_dir):
-    print(destination_dir)
     if not os.path.exists(work_dir):
         sys.stderr.write("Work directory, {}, does not exist".format(work_dir))
         return
@@ -118,7 +109,16 @@ def organize_files_by_type(work_dir, destination_dir):
         if firstword == "All" or filename.startswith("SNPs_all") or filename == "all_snp_distance_heatmap.html":
             All_SNPs_dir = os.path.join(destination_dir, "All_SNPs")
             os.makedirs(All_SNPs_dir, exist_ok=True)
-            shutil.copy(file_path, All_SNPs_dir)
+            # Add extensions to SNPs_all and SNPs_all_matrix for the website
+            if filename == "SNPs_all":
+                new_path = os.path.join(All_SNPs_dir, (filename + ".tsv"))
+                shutil.copy(file_path, new_path)
+            elif filename == "SNPs_all_matrix":
+                new_path = os.path.join(All_SNPs_dir, (filename + ".txt"))
+                shutil.copy(file_path, new_path)
+            # else copy all files to the all SNPS dir
+            else:
+                shutil.copy(file_path, All_SNPs_dir)
         if firstword == "annotate" and os.path.getsize(file_path) > 0:
             shutil.copy(file_path, intermediate_dir)
         if firstword == "ClusterInfo.SNPs" or firstword == "ClusterInfo.core":
@@ -129,7 +129,19 @@ def organize_files_by_type(work_dir, destination_dir):
         if firstword == "core" or firstword == "nonCore" or filename == "core_snp_distance_heatmap.html":
             core_snp_dir = os.path.join(destination_dir, "Core_SNPs")
             os.makedirs(core_snp_dir, exist_ok=True)
-            shutil.copy(file_path, core_snp_dir)
+            # Add extensions to core_SNPs and core_SNPs_matrix for the website
+            if filename == "core_SNPs":
+                new_path = os.path.join(core_snp_dir, (filename + ".tsv"))
+                shutil.copy(file_path, new_path)
+            elif filename == "core_SNPs_matrix":
+                new_path = os.path.join(core_snp_dir, (filename + ".txt"))
+                shutil.copy(file_path, new_path)
+            elif filename.startswith("core_kSNPdist"):
+                # shutil.copy(file_path, work_dir)
+                pass
+            # else copy all files to the core SNPS dir
+            else:
+                shutil.copy(file_path, core_snp_dir)
         if firstword == "COUNT" or firstword == "tip" or firstword == "Node" or firstword == "NJ.dist.matrix":
             intermediate_dir = os.path.join(destination_dir, "Intermediate_Files")
             os.makedirs(intermediate_dir, exist_ok=True)
@@ -143,53 +155,54 @@ def organize_files_by_type(work_dir, destination_dir):
             group = infer_output_type(filename)
             majority_dir = os.path.join(destination_dir, group)
             os.makedirs(majority_dir, exist_ok=True)
-            shutil.copy(file_path, majority_dir)
-        # Capture specifically SNPs_in_majority0.5 where 5 could be any integer 0-9 without anything else
-        if len(filename) == 19 and filename.startswith("SNPs_in_majority0.") or filename == "majority_snp_distance_heatmap.html":
+            if len(filename) == 26:
+                new_path = os.path.join(majority_dir, (filename + ".txt"))
+                shutil.copy(file_path, new_path)
+            else:
+            # print(file_path)
+            # print(filename)
+                shutil.copy(file_path, majority_dir)
+        # Capture specifically SNPs_in_majority0.5 where 5 could be any integer 0-9
+        if filename.startswith("SNPs_in_majority0.") or filename == "majority_snp_distance_heatmap.html":
             group = infer_output_type(filename)
             majority_dir = os.path.join(destination_dir, group)
             os.makedirs(majority_dir, exist_ok=True)
-            shutil.copy(file_path, majority_dir)
+            # shutil.copy(file_path, majority_dir)
+            if filename.startswith("SNPs_in_majority") and len(filename) == 19:
+                new_path = os.path.join(majority_dir, (filename + ".tsv"))
+                shutil.copy(file_path, new_path)
+            # elif "SNPs_in_majority" in filename and len(filename) == 26:
+            #     new_path = os.path.join(majority_dir, (filename + ".txt"))
+            #     shutil.copy(file_path, new_path)
         if firstword.startswith("VCF"):
             VCFs_dir = os.path.join(destination_dir, "VCFs")
             os.makedirs(VCFs_dir, exist_ok=True)
             shutil.copy(file_path, VCFs_dir)
-
-    # Trees get a seperate loop
+    # Trees get their own loop
     clean_tree_dir = os.path.join(work_dir,"clean_trees")
     for filename in os.listdir(clean_tree_dir):
         file_path = os.path.join(clean_tree_dir, filename)
         group = infer_output_type(filename)
         if filename == "tree_AlleleCounts.parsimony.tre" or filename == "tree_AlleleCounts.parsimony.tre.phyloxml":
-            # print("found".format(file_path))
-            pass
+            shutil.copy(file_path, destination_dir)
         else:
-            if group == "All_SNPs" or group == "Core_SNPs":
+            if group == "All_SNPs" or group == "Core_SNPs" or group == "Majority_SNPs":
                 tree_dir = os.path.join(destination_dir, group, "Trees")
-                if filename == "tree_tipAlleleCounts.SNPs_all.parsimony.tre":
-                    group_dir = os.path.join(destination_dir, "All_SNPs")
-                    shutil.copy(file_path, group_dir)
-                if filename == "tree_tipAlleleCounts.core_SNPs.parsimony.tre":
-                    shutil.copy(file_path, "Core_SNPs")
-                if filename == "tree_AlleleCounts.SNPs_all.parsimony.NodeLabel.tre":
-                    group_dir = os.path.join(destination_dir, "All_SNPs")
-                    shutil.copy(file_path, group_dir)
-                if filename == "tree_AlleleCounts.core_SNPs.parsimony.NodeLabel.tre":
-                    shutil.copy(file_path, "Core_SNPs")
                 os.makedirs(tree_dir, exist_ok=True)
-
-                name, ext = os.path.splitext(filename)
-
-                if ext == ".phyloxml":
-                    shutil.copy(file_path, tree_dir)
-                elif ext == ".tre":
-                    # Newick Trees going in their own subdirectory
-                    newick_tree_dir = os.path.join(tree_dir, "Newick_Files")
-                    os.makedirs(newick_tree_dir, exist_ok=True)
-                    shutil.copy(file_path, newick_tree_dir)
+                if os.path.splitext(file_path)[-1].lower() == ".tre":
+                    newick_dir = os.path.join(tree_dir, "Newick_Files")
+                    os.makedirs(newick_dir, exist_ok=True)
+                    shutil.copy(file_path, newick_dir)
                 else:
-                    msg = "UNKNOWN TREE not uploaded in output dir: {}".format(file_path)
-                    sys.stderr.write(msg)
+                    shutil.copy(file_path, tree_dir)
+            else:
+                tree_dir = os.path.join(destination_dir, "All_SNPs", "Trees")
+                if os.path.splitext(file_path)[-1].lower() == ".tre":
+                    newick_dir = os.path.join(tree_dir, "Newick_Files")
+                    os.makedirs(newick_dir, exist_ok=True)
+                    shutil.copy(file_path, newick_dir)
+                else:
+                    shutil.copy(file_path, tree_dir)
 
 def parse_optimum_k(kchooser_report):
     with open(kchooser_report, 'r') as file:
@@ -208,9 +221,7 @@ def run_newick_to_phyloxml(clean_nwk):
 
 
 def snp_distance_heatmap(config, ksnp_dist_report, output_html):
-    # Set up data
     df = pd.read_csv(ksnp_dist_report, sep='\t', header=None)
-    # df.columns = ['value', 'genome1', 'genome2']
     df.columns = ["value", "genome1", "genome2"]
     pivoted = df.pivot(index="genome1", columns="genome2", values="value")
 
@@ -220,66 +231,42 @@ def snp_distance_heatmap(config, ksnp_dist_report, output_html):
     # Normalize real values to 0–1 range for color scale
     def normalize(v): return (v - zmin) / (zmax - zmin)
 
-    color_scale = [
-        [normalize(0), "crimson"],
-        [normalize(10), "yellow"],
-        [normalize(40), "mistyrose"],
-        [1.0, "white"]
-    ]
-
     # Plot heatmap
     fig = px.imshow(pivoted,
                     labels=dict(x="Genome", y="Genome", color="SNP Distance"),
                     x=pivoted.columns,
                     y=pivoted.index,
-                    color_continuous_scale=color_scale,
+                    # color_continuous_scale=color_scale,
                     zmin=zmin,
                     zmax=zmax,
                     aspect='auto')
 
-    # Manually add scatter traces for the legend
-    fig.add_trace(go.Scatter(
-        x=[None], y=[None],
-        mode='markers',
-        marker=dict(size=10, color='crimson'),
-        name='0–10 Strong Linkage'
-    ))
-
-    fig.add_trace(go.Scatter(
-        x=[None], y=[None],
-        mode='markers',
-        marker=dict(size=10, color='yellow'),
-        name='10–40 Mid Linkage'
-    ))
-
-    fig.add_trace(go.Scatter(
-        x=[None], y=[None],
-        mode='markers',
-        marker=dict(size=10, color='mistyrose'),
-        name='>40 Weak Linkage'
-    ))
-
-    fig.add_trace(go.Scatter(
-        x=[None], y=[None],
-        mode='markers',
-        marker=dict(size=10, color='white'),
-        name='Max distance'
-    ))
-    fig.update_layout(
-    legend=dict(
-        x=0,        # left (0.0), right (1.0)
-        y=0.0,        # top (1.0), bottom (0.0)
-        xanchor="left",
-        yanchor="bottom",
-        bgcolor="rgba(255,255,255,0.6)",  # semi-transparent background
-        bordercolor="black",
-        borderwidth=1
-    ))
+    # Remove heatmap legend for now. 
+    # fig.update_traces(
+    #     colorbar=dict(
+    #         title="SNP Distance",
+    #         tickvals=[10, 40, 60, zmax],
+    #         ticktext=["Strong Linkage", "Mid Linkage", "Weak Linkage", "Max Distance"]
+    #     )
+    # )
+    
+    # fig.update_layout(
+    # legend=dict(
+    #     x=0,        # left (0.0), right (1.0)
+    #     y=0.0,        # top (1.0), bottom (0.0)
+    #     xanchor="left",
+    #     yanchor="bottom",
+    #     bgcolor="rgba(255,255,255,0.6)",  # semi-transparent background
+    #     bordercolor="black",
+    #     borderwidth=1
+    # ))
     fig.update_layout(title="SNP Count Heatmap")
     fig.update_yaxes(showgrid=True, tickangle=45)
     fig.update_xaxes(showgrid=True, tickangle=45)
     offline.plot(fig, filename=output_html, auto_open=False)
     print('complete')
+
+
 
 def tsv_to_html(df, json_data, html_output_path):
     """
@@ -459,7 +446,9 @@ def parse_kchooser_report(kchooser_report):
 @click.argument("metadata_json")
 def write_snp_distance_heatmap(config, ksnp_dist_report, output_html, metadata_json):
     """ Write a heatmap displaying snp level differences between genomes using the output from kSNPdist. kSNPDist only works with the SNPs all matrix fasta file. This command uses the kSNPdist.report."""
+    # snp_distance_heatmap(config, ksnp_dist_report, output_html, metadata_json)
     snp_distance_heatmap(config, ksnp_dist_report, output_html)
+    print("Complete from command call")
 
 @cli.command()
 @click.argument("metadata_json")

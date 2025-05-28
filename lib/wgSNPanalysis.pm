@@ -76,7 +76,7 @@ sub run_WholeGenomeSNPanalysis
     }
     save_output_files($app, $output_dir);
     my $end_time = time();
-    print STDERR "TOTAL TIME ELAPSED %.2f\n", $end_time - $begin_time ;
+    printf STDERR "TOTAL TIME ELAPSED %.2f\n", $end_time - $begin_time ;
 }
 
 
@@ -254,17 +254,13 @@ sub save_output_files
     my($app, $output) = @_;
 
     my %suffix_map = (
+            txt => 'txt',
+            tsv => 'tsv',
             phyloxml => 'phyloxml',
             tre => 'nwk',
             NJ => 'txt',
             ML => 'txt',
-            SNPs_all => 'tsv',
-            SNPs_all_matrix => 'txt',
-            core_SNPs => 'tsv',
             5 => 'tsv',
-            nonCore_SNPs => 'tsv',
-            core_SNPs => 'tsv',
-            core_SNPs_matrix => 'txt',
             vcf => 'vcf',
             fasta => 'contigs',
             html => 'html');
