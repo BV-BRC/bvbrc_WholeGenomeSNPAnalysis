@@ -1,11 +1,6 @@
-#### NICOLE ALERT ####
-# UPDATE THE PATH TO KSNPDIST ONCE IN THE CONTAINER
-#### NICOLE ALERT ####
-
 import json
 import os
 
-## grab optimum k value ##
 def read_k_value(file_path):
     try:
         with open(file_path, "r") as file:
@@ -20,7 +15,7 @@ msg = 'Checkpoint 5: snakefile command recieved - kSNP4 analysis \n'
 sys.stderr.write(msg)
 
 current_directory = os.getcwd()
-print(current_directory)
+
 # Load the JSON data
 with open("{}/config.json".format(current_directory)) as f:
     data = json.load(f)
@@ -34,10 +29,11 @@ rule_all_list = [
                 "{}/kSNP_command_touchpoint.txt".format(work_data_dir),
                 # "{}/kSNP_annotation_command_touchpoint.txt".format(current_directory),
                 "{}/phylo_xml_trees_touchpoint.txt".format(work_data_dir),
-                "{}/core_snp_distance_heatmap.html".format(work_data_dir),
-                "{}/majority_ksnp_dist_touchpoint.txt".format(work_data_dir),
-                "{}/all_snp_distance_heatmap.html".format(work_data_dir),
-                "{}/organize_files_touchpoint.txt".format(work_data_dir)
+                "{}/core_kSNPdist.report".format(work_data_dir),
+                "{}/all_kSNPdist.report".format(work_data_dir),
+                "{}/majority_kSNPdist.report".format(work_data_dir),  
+                "{}/organize_files_touchpoint.txt".format(work_data_dir),
+                "{}/WholeGenomeSNP_Report.html".format(data["output_data_dir"]),
                 ]
 
 rule all:
@@ -115,7 +111,6 @@ rule run_kSNP4:
 #         touch {output.touchpoint}
 #         """
 
-
 rule convert_trees_to_phyloxml:
     input:
         touchpoint = "{}/kSNP_command_touchpoint.txt".format(work_data_dir),
@@ -127,9 +122,10 @@ rule convert_trees_to_phyloxml:
         whole_genome_snp_utils convert-to-phyloxml-trees {input.config}
 
         touch {output.touchpoint}
+
+        whole_genome_snp_utils
         """
 
-# dev!
 rule run_kdist_core:
     input:
         "{}/kSNP_command_touchpoint.txt".format(work_data_dir),
@@ -142,7 +138,6 @@ rule run_kdist_core:
     output:
         dist_matrix = "{}/core_kSNPdist.matrix".format(work_data_dir),
         dist_report = "{}/core_kSNPdist.report".format(work_data_dir),
-        html_out = "{}/core_snp_distance_heatmap.html".format(work_data_dir)
     shell:
         """
         mkdir -p core_distance_dir 
@@ -153,11 +148,9 @@ rule run_kdist_core:
 
         cd ../
 
-        mv {params.tmp_dist_report} {output.dist_report}
-
         mv {params.tmp_dist_matrix} {output.dist_matrix}
 
-        whole_genome_snp_utils write-snp-distance-heatmap {input.config} {output.dist_report} {output.html_out} {input.metadata}
+        mv {params.tmp_dist_report} {output.dist_report}
         
         """
 
@@ -173,7 +166,6 @@ rule run_kdist_all:
     output:
         dist_matrix = "{}/all_kSNPdist.matrix".format(work_data_dir),
         dist_report = "{}/all_kSNPdist.report".format(work_data_dir),
-        html_out = "{}/all_snp_distance_heatmap.html".format(work_data_dir)
     shell:
         """
         mkdir -p all_distance_dir 
@@ -187,12 +179,10 @@ rule run_kdist_all:
         mv {params.tmp_dist_report} {output.dist_report}
 
         mv {params.tmp_dist_matrix} {output.dist_matrix}
-
-        whole_genome_snp_utils write-snp-distance-heatmap {input.config} {output.dist_report} {output.html_out} {input.metadata}
         
         """
 
-# params because Majority 
+# params because Majority makes it difficult to expect the path
 rule run_kdist_majority:
     input:
         "{}/kSNP_command_touchpoint.txt".format(work_data_dir),
@@ -202,11 +192,9 @@ rule run_kdist_majority:
         majority_SNPs_matrix = "{}/SNPs_in_majority{}_matrix.fasta".format(work_data_dir, majority_threshold),
         tmp_dist_matrix ="{}/majority_distance_dir/kSNPdist.matrix".format(current_directory),
         tmp_dist_report ="{}/majority_distance_dir/kSNPdist.report".format(current_directory),
-        dist_matrix = "{}/majority_kSNPdist.matrix".format(work_data_dir),
-        dist_report = "{}/majority_kSNPdist.report".format(work_data_dir),
-        html_out = "{}/majority_snp_distance_heatmap.html".format(work_data_dir)
     output:
-        touchpoint = "{}/majority_ksnp_dist_touchpoint.txt".format(work_data_dir)
+        dist_matrix = "{}/majority_kSNPdist.matrix".format(work_data_dir),
+        dist_report = "{}/majority_kSNPdist.report".format(work_data_dir),      
     shell:
         """
         mkdir -p majority_distance_dir 
@@ -217,21 +205,19 @@ rule run_kdist_majority:
 
         cd ../
 
-        cp {params.tmp_dist_report} {params.dist_report}
+        cp {params.tmp_dist_report} {output.dist_report}
 
-        cp {params.tmp_dist_matrix} {params.dist_matrix}
+        cp {params.tmp_dist_matrix} {output.dist_matrix}
 
-        whole_genome_snp_utils write-snp-distance-heatmap {input.config} {params.dist_report} {params.html_out} {input.metadata}
-
-        touch {output.touchpoint}
         """
 
 rule organize_files:
     input:
-        touchpoint = "{}/phylo_xml_trees_touchpoint.txt".format(work_data_dir),
-        core_heatmap = "{}/core_snp_distance_heatmap.html".format(work_data_dir),
-        majority_heatmap = "{}/majority_ksnp_dist_touchpoint.txt".format(work_data_dir),
-        all_heatmap = "{}/all_snp_distance_heatmap.html".format(work_data_dir),
+        all_dist_report = "{}/all_kSNPdist.report".format(work_data_dir),
+        core_dist_report = "{}/core_kSNPdist.report".format(work_data_dir),
+        majority_dist_report = "{}/majority_kSNPdist.report".format(work_data_dir),
+        ksnp_touchpoint = "{}/kSNP_command_touchpoint.txt".format(work_data_dir),  
+        phylo_xml_touchpoint = "{}/phylo_xml_trees_touchpoint.txt".format(work_data_dir),
         config = "{}/config.json".format(current_directory)
     output:
         touchpoint = "{}/organize_files_touchpoint.txt".format(work_data_dir)
@@ -239,5 +225,17 @@ rule organize_files:
         """
         whole_genome_snp_utils organize-output-files {input.config}
 
+        whole_genome_snp_utils run-tree-to-svg {input.config}
+
         touch {output.touchpoint}
+        """
+rule write_report:
+    input:
+        config = "{}/config.json".format(current_directory),
+        input_touchpoint = "{}/organize_files_touchpoint.txt".format(work_data_dir)
+    output:
+        html_out = "{}/WholeGenomeSNP_Report.html".format(data["output_data_dir"])
+    shell:
+        """
+        whole_genome_snp_utils write-html-report {input.config} {output.html_out}
         """
