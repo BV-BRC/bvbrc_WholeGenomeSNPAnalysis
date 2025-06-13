@@ -340,7 +340,7 @@ def define_html_template(input_genome_table, barplot_html, snp_distribution_html
                     </select>
                 </label>
                 <br>
-                <label>Method:
+                <label>Tree Building Method:
                     <select id="methodSelector" onchange="updateSVG()">
                         <option value="ML">Maximum Likelihood</option>
                         <option value="NJ">Neighbor Joining</option>
