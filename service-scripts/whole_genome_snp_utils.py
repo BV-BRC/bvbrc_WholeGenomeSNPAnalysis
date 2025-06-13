@@ -60,7 +60,7 @@ def create_metadata_table(metadata_json, tsv_out):
         metadata = json.load(f)
     # Convert genome_id: replace '.' with '_'
     for record in metadata:
-        # match the style of the genom ids in the heatmap
+        # match the style of the genome ids in the heatmap
         record["genome_id"] = record["genome_id"].replace(".", "_")
     metadata_df = pd.json_normalize(metadata)
 
@@ -164,12 +164,12 @@ def define_html_template(input_genome_table, barplot_html, snp_distribution_html
                     <div class="title">Whole Genome SNP Analysis Report</div>
                         </a>
                 </header>
-            <p> Explore the results of your Whole Genome SNP analysis in this interactive report. This service uses a reference-free tool for identifying Single Nucleotide Polymorphisms (SNPs) called kSNP4.  This reference free tool identifies SNPs through a k-mer based analysis.  Note, you can download the images of the plots in this report by clicking on the camera icon in the upper left hand corner. Poor quality assemblies can impact the performance of this service.</p>
+            <p> Explore the results of your Whole Genome SNP analysis in this interactive report. This service uses a reference-free tool for identifying Single Nucleotide Polymorphisms (SNPs) called kSNP4.  This reference free tool identifies SNPs through a k-mer based analysis.  Note, you can download the images of the plots in this report by clicking on the camera icon in the upper left-hand corner. Poor quality assemblies can impact the performance of this service.</p>
             <h3>About the Analysis Workflow</h3>
             <p> 
-            kSNP4 identifies SNPs and does phylogenetic analysis without genome alignment or the use of reference genomes. They estimate phylogenetic trees based on 3 methods: parsimony, neighbor ioining (NJ), and maximum likelihood (ML). The tool creates three groups, All SNPs, Core SNPs and SNPs within a majority threshold.
+            kSNP4 identifies SNPs and does phylogenetic analysis without genome alignment or the use of reference genomes. They estimate phylogenetic trees based on 3 methods: parsimony, neighbor joining (NJ), and maximum likelihood (ML). The tool creates three groups, All SNPs, Core SNPs and SNPs within a majority threshold.
              
-             Our pipeline begins by selecting the optimum kmersize by reviewing your genomes with a series of add-length kmers to seek the shortest length for which each kmer occurs only once in the median-sized genome.
+             Our pipeline begins by selecting the optimum k-mer size by reviewing your genomes with a series of add-length k-mers to seek the shortest length for which each k-mer occurs only once in the median-sized genome.
              
              While kSNP4 runs it identifies SNPs across the three genome groups (All, Core, Majority).  Then constructs phylogenetic trees based on the SNPs. Static images of the trees are available in this report. The trees are also viewable in the website's phylogenetic tree viewer with the ability to map metadata to the tree. Other files available are multiple alignment of all SNP positions and related files. A companion program, kSNPdist creates a SNP distance matrix for each genome group.</p>
             <h2>Getting to Know the Input Data</h2>
@@ -318,7 +318,7 @@ def define_html_template(input_genome_table, barplot_html, snp_distribution_html
             <br>
             <p>A SNP is considered Homoplastic which that SNP occurs in two or more unrelated positions on the same tree.</p>
             <ul style="list-style-type: disc; padding-left: 25;">
-            <li><b>Parsimony</b> the parsimony tree methd is a good fit for small datasets with close relatives and low divergency. It estimated by creating a consensus of up to 100 equally parsimonious trees. It seeks a tree topology that explains the observed sequence data with the smallest possible number of evolutionary changes.</li>
+            <li><b>Parsimony</b> the parsimony tree method is a good fit for small datasets with close relatives and low divergency. It estimated by creating a consensus of up to 100 equally parsimonious trees. It seeks a tree topology that explains the observed sequence data with the smallest possible number of evolutionary changes.</li>
             <li><b>Maximum Likelihood</b> the maximum likelihood tree is a good fit for datasets with substantial divergency and complex substitution patterns. It is constructed by finding the tree topology that has the highest likelihood of producing the observed sequence data. </li>
             <li><b>Neighbor Joining</b> this tree method is a good fit for exploratory analysis, especially with very large datasets. This is a distance-based method that constructs a tree by iteratively finding pairs of taxa (neighbors) that minimuze the total branch length at each step.  It uses distance matrix (pairwise genetic distances between sequences).</li>
             </ul>
