@@ -65,5 +65,5 @@ rule run_kchooser:
 
         cd {params.current_directory_}
 
-        whole_genome_snp_utils parse-kchooser-report {output.output_from_kchooser} > {output.optimum_k_txt}
+        whole_genome_snp_utils find-optimum-k  {output.output_from_kchooser} > {output.optimum_k_txt}
         """
