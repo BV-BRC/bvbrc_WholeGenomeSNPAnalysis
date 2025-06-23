@@ -77,6 +77,7 @@ def create_metadata_table(metadata_json, tsv_out):
 
 
 def define_html_template(input_genome_table, barplot_html, snp_distribution_html, homoplastic_snps_html, heatmap_html, majority_threshold, metadata_json_string):
+    majority_percentage = majority_threshold * 100
     html_template = """
             <!DOCTYPE html>
             <html lang="en">
@@ -156,8 +157,8 @@ def define_html_template(input_genome_table, barplot_html, snp_distribution_html
                     box-sizing: border-box;
                     }}
                 </style>
-                <!-- Plotly -->
-                <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+                <!-- Plotly.js v3.0.1  — last updated June 2025 --> 
+                <script src="https://cdn.plot.ly/plotly-3.0.1.min.js"></script>
                 <!-- DataTables CSS -->
                 <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
                 <header>
@@ -311,7 +312,7 @@ def define_html_template(input_genome_table, barplot_html, snp_distribution_html
             <ul style="list-style-type: disc; padding-left: 25;">
             <li><b>Total SNPs</b> includes every SNP identified from all genomes given to the service regardless of how many genomes the SNP is present it.</li>
             <li><b>Core SNPs</b> are present in every genome analyzed.</li>
-            <li><b>Majority SNPs</b> are present in at least {majority_threshold} percentage of the genomes analyzed.</li>
+            <li><b>Majority SNPs</b> are present in at least {majority_percentage} percent of the genomes analyzed.</li>
             </ul>
             <h3>Homoplastic SNPs</h3>
             {homoplastic_snps_html}
@@ -384,7 +385,7 @@ def define_html_template(input_genome_table, barplot_html, snp_distribution_html
         </body>
         </html>
         """.format(input_genome_table = input_genome_table, barplot_html=barplot_html, snp_distribution_html=snp_distribution_html,  homoplastic_snps_html=homoplastic_snps_html, \
-                heatmap_html=heatmap_html, majority_threshold=majority_threshold, metadata_json_string=metadata_json_string)
+                heatmap_html=heatmap_html, majority_percentage=majority_percentage, majority_threshold=majority_threshold, metadata_json_string=metadata_json_string)
     return html_template
 
 
@@ -573,7 +574,8 @@ def interactive_threshold_heatmap(service_config, metadata_json):
             const meta1 = idToMeta[id1] || {{}};
             const meta2 = idToMeta[id2] || {{}};
 
-            let hover = `Genome 1: ${{id1}}<br>`;
+            let hover = `SNP Distance: ${{val}}<br><br>`;
+            hover += `Genome 1: ${{id1}}<br>`;
             for (const [field, fieldVal] of Object.entries(meta1)) {{
                 hover += `${{field}}: ${{fieldVal}}<br>`;
             }}
@@ -582,9 +584,8 @@ def interactive_threshold_heatmap(service_config, metadata_json):
             for (const [field, fieldVal] of Object.entries(meta2)) {{
                 hover += `${{field}}: ${{fieldVal}}<br>`;
             }}
-
-            hover += `SNP Distance: ${{val}}`;
             return hover;
+
             }})
         );
 
