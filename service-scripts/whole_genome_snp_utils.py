@@ -60,7 +60,7 @@ def create_metadata_table(metadata_json, tsv_out):
         metadata = json.load(f)
     # Convert genome_id: replace '.' with '_'
     for record in metadata:
-        # match the style of the genom ids in the heatmap
+        # match the style of the genome ids in the heatmap
         record["genome_id"] = record["genome_id"].replace(".", "_")
     metadata_df = pd.json_normalize(metadata)
 
@@ -77,7 +77,6 @@ def create_metadata_table(metadata_json, tsv_out):
 
 
 def define_html_template(input_genome_table, barplot_html, snp_distribution_html, homoplastic_snps_html, heatmap_html, majority_threshold, metadata_json_string):
-    majority_percentage = majority_threshold * 100
     html_template = """
             <!DOCTYPE html>
             <html lang="en">
@@ -157,20 +156,20 @@ def define_html_template(input_genome_table, barplot_html, snp_distribution_html
                     box-sizing: border-box;
                     }}
                 </style>
-                <!-- Plotly.js v3.0.1  — last updated June 2025 --> 
-                <script src="https://cdn.plot.ly/plotly-3.0.1.min.js"></script>
+                <!-- Plotly -->
+                <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
                 <!-- DataTables CSS -->
                 <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
                 <header>
                     <div class="title">Whole Genome SNP Analysis Report</div>
                         </a>
                 </header>
-            <p> Explore the results of your Whole Genome SNP analysis in this interactive report. This service uses a reference-free tool for identifying Single Nucleotide Polymorphisms (SNPs) called kSNP4.  This reference free tool identifies SNPs through a k-mer based analysis.  Note, you can download the images of the plots in this report by clicking on the camera icon in the upper left hand corner. Poor quality assemblies can impact the performance of this service.</p>
+            <p> Explore the results of your Whole Genome SNP analysis in this interactive report. This service uses a reference-free tool for identifying Single Nucleotide Polymorphisms (SNPs) called kSNP4.  This reference free tool identifies SNPs through a k-mer based analysis.  Note, you can download the images of the plots in this report by clicking on the camera icon in the upper left-hand corner. Poor quality assemblies can impact the performance of this service.</p>
             <h3>About the Analysis Workflow</h3>
             <p> 
-            kSNP4 identifies SNPs and does phylogenetic analysis without genome alignment or the use of reference genomes. They estimate phylogenetic trees based on 3 methods: parsimony, neighbor ioining (NJ), and maximum likelihood (ML). The tool creates three groups, All SNPs, Core SNPs and SNPs within a majority threshold.
+            kSNP4 identifies SNPs and does phylogenetic analysis without genome alignment or the use of reference genomes. They estimate phylogenetic trees based on 3 methods: parsimony, neighbor joining (NJ), and maximum likelihood (ML). The tool creates three groups, All SNPs, Core SNPs and SNPs within a majority threshold.
              
-             Our pipeline begins by selecting the optimum kmersize by reviewing your genomes with a series of add-length kmers to seek the shortest length for which each kmer occurs only once in the median-sized genome.
+             Our pipeline begins by selecting the optimum k-mer size by reviewing your genomes with a series of add-length k-mers to seek the shortest length for which each k-mer occurs only once in the median-sized genome.
              
              While kSNP4 runs it identifies SNPs across the three genome groups (All, Core, Majority).  Then constructs phylogenetic trees based on the SNPs. Static images of the trees are available in this report. The trees are also viewable in the website's phylogenetic tree viewer with the ability to map metadata to the tree. Other files available are multiple alignment of all SNP positions and related files. A companion program, kSNPdist creates a SNP distance matrix for each genome group.</p>
             <h2>Getting to Know the Input Data</h2>
@@ -312,16 +311,16 @@ def define_html_template(input_genome_table, barplot_html, snp_distribution_html
             <ul style="list-style-type: disc; padding-left: 25;">
             <li><b>Total SNPs</b> includes every SNP identified from all genomes given to the service regardless of how many genomes the SNP is present it.</li>
             <li><b>Core SNPs</b> are present in every genome analyzed.</li>
-            <li><b>Majority SNPs</b> are present in at least {majority_percentage} percent of the genomes analyzed.</li>
+            <li><b>Majority SNPs</b> are present in at least {majority_threshold} percentage of the genomes analyzed.</li>
             </ul>
             <h3>Homoplastic SNPs</h3>
             {homoplastic_snps_html}
             <br>
             <p>A SNP is considered Homoplastic which that SNP occurs in two or more unrelated positions on the same tree.</p>
             <ul style="list-style-type: disc; padding-left: 25;">
-            <li><b>Parsimony</b> the parsimony tree methd is a good fit for small datasets with close relatives and low divergency. It estimated by creating a consensus of up to 100 equally parsimonious trees. It seeks a tree topology that explains the observed sequence data with the smallest possible number of evolutionary changes.</li>
+            <li><b>Parsimony</b> the parsimony tree method is a good fit for small datasets with close relatives and low divergency. It estimated by creating a consensus of up to 100 equally parsimonious trees. It seeks a tree topology that explains the observed sequence data with the smallest possible number of evolutionary changes.</li>
             <li><b>Maximum Likelihood</b> the maximum likelihood tree is a good fit for datasets with substantial divergency and complex substitution patterns. It is constructed by finding the tree topology that has the highest likelihood of producing the observed sequence data. </li>
-            <li><b>Neighbor Joining</b> this tree method is a good fit for exploratory analysis, especially with very large datasets. This is a distance-based method that constructs a tree by iteratively finding pairs of taxa (neighbors) that minimuze the total branch length at each step.  It uses distance matrix (pairwise genetic distances between sequences).</li>
+            <li><b>Neighbor Joining</b> this tree method is a good fit for exploratory analysis, especially with very large datasets. This is a distance-based method that constructs a tree by iteratively finding pairs of taxa (neighbors) that minimize  the total branch length at each step.  It uses distance matrix (pairwise genetic distances between sequences).</li>
             </ul>
             <p>Please visit the kSNP4 documentation for more information about the many trees created by this service.<p>
             {heatmap_html}
@@ -341,7 +340,7 @@ def define_html_template(input_genome_table, barplot_html, snp_distribution_html
                     </select>
                 </label>
                 <br>
-                <label>Method:
+                <label>Tree Building Method:
                     <select id="methodSelector" onchange="updateSVG()">
                         <option value="ML">Maximum Likelihood</option>
                         <option value="NJ">Neighbor Joining</option>
@@ -385,7 +384,7 @@ def define_html_template(input_genome_table, barplot_html, snp_distribution_html
         </body>
         </html>
         """.format(input_genome_table = input_genome_table, barplot_html=barplot_html, snp_distribution_html=snp_distribution_html,  homoplastic_snps_html=homoplastic_snps_html, \
-                heatmap_html=heatmap_html, majority_percentage=majority_percentage, majority_threshold=majority_threshold, metadata_json_string=metadata_json_string)
+                heatmap_html=heatmap_html, majority_threshold=majority_threshold, metadata_json_string=metadata_json_string)
     return html_template
 
 
@@ -398,15 +397,12 @@ def interactive_threshold_heatmap(service_config, metadata_json):
     all_snps_report = os.path.join(work_dir, "all_kSNPdist.report")
     if os.path.exists(all_snps_report) == True:
         all_genome_ids, all_snpMatrix = read_ksnp_distance_report(all_snps_report)
-        # all_genome_ids, all_snpMatrix, all_snpMatrix_ordered = read_ksnp_distance_report(all_snps_report)
     core_snps_report = os.path.join(work_dir,"core_kSNPdist.report")
     if os.path.exists(core_snps_report) == True:
         core_genome_ids, core_snpMatrix = read_ksnp_distance_report(core_snps_report)
-        # core_genome_ids, core_snpMatrix, core_snpMatrix_ordered = read_ksnp_distance_report(core_snps_report)
     majority_snps_report = os.path.join(work_dir,"majority_kSNPdist.report")
     if os.path.exists(majority_snps_report) == True:
         majority_genome_ids, majority_snpMatrix = read_ksnp_distance_report(majority_snps_report)
-        # majority_genome_ids, majority_snpMatrix, majority_snpMatrix_ordered = read_ksnp_distance_report(majority_snps_report)
 
     # format the metadata into a string for the report
     metadata_json_string, metadata_df = create_metadata_table(metadata_json, "metadata.tsv")
@@ -574,8 +570,7 @@ def interactive_threshold_heatmap(service_config, metadata_json):
             const meta1 = idToMeta[id1] || {{}};
             const meta2 = idToMeta[id2] || {{}};
 
-            let hover = `SNP Distance: ${{val}}<br><br>`;
-            hover += `Genome 1: ${{id1}}<br>`;
+            let hover = `Genome 1: ${{id1}}<br>`;
             for (const [field, fieldVal] of Object.entries(meta1)) {{
                 hover += `${{field}}: ${{fieldVal}}<br>`;
             }}
@@ -584,8 +579,9 @@ def interactive_threshold_heatmap(service_config, metadata_json):
             for (const [field, fieldVal] of Object.entries(meta2)) {{
                 hover += `${{field}}: ${{fieldVal}}<br>`;
             }}
-            return hover;
 
+            hover += `SNP Distance: ${{val}}`;
+            return hover;
             }})
         );
 
