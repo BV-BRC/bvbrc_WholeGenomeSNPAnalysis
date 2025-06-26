@@ -320,7 +320,7 @@ def define_html_template(input_genome_table, barplot_html, snp_distribution_html
             <ul style="list-style-type: disc; padding-left: 25;">
             <li><b>Parsimony</b> the parsimony tree method is a good fit for small datasets with close relatives and low divergency. It estimated by creating a consensus of up to 100 equally parsimonious trees. It seeks a tree topology that explains the observed sequence data with the smallest possible number of evolutionary changes.</li>
             <li><b>Maximum Likelihood</b> the maximum likelihood tree is a good fit for datasets with substantial divergency and complex substitution patterns. It is constructed by finding the tree topology that has the highest likelihood of producing the observed sequence data. </li>
-            <li><b>Neighbor Joining</b> this tree method is a good fit for exploratory analysis, especially with very large datasets. This is a distance-based method that constructs a tree by iteratively finding pairs of taxa (neighbors) that minimuze the total branch length at each step.  It uses distance matrix (pairwise genetic distances between sequences).</li>
+            <li><b>Neighbor Joining</b> this tree method is a good fit for exploratory analysis, especially with very large datasets. This is a distance-based method that constructs a tree by iteratively finding pairs of taxa (neighbors) that minimize  the total branch length at each step.  It uses distance matrix (pairwise genetic distances between sequences).</li>
             </ul>
             <p>Please visit the kSNP4 documentation for more information about the many trees created by this service.<p>
             {heatmap_html}
@@ -397,15 +397,12 @@ def interactive_threshold_heatmap(service_config, metadata_json):
     all_snps_report = os.path.join(work_dir, "all_kSNPdist.report")
     if os.path.exists(all_snps_report) == True:
         all_genome_ids, all_snpMatrix = read_ksnp_distance_report(all_snps_report)
-        # all_genome_ids, all_snpMatrix, all_snpMatrix_ordered = read_ksnp_distance_report(all_snps_report)
     core_snps_report = os.path.join(work_dir,"core_kSNPdist.report")
     if os.path.exists(core_snps_report) == True:
         core_genome_ids, core_snpMatrix = read_ksnp_distance_report(core_snps_report)
-        # core_genome_ids, core_snpMatrix, core_snpMatrix_ordered = read_ksnp_distance_report(core_snps_report)
     majority_snps_report = os.path.join(work_dir,"majority_kSNPdist.report")
     if os.path.exists(majority_snps_report) == True:
         majority_genome_ids, majority_snpMatrix = read_ksnp_distance_report(majority_snps_report)
-        # majority_genome_ids, majority_snpMatrix, majority_snpMatrix_ordered = read_ksnp_distance_report(majority_snps_report)
 
     # format the metadata into a string for the report
     metadata_json_string, metadata_df = create_metadata_table(metadata_json, "metadata.tsv")

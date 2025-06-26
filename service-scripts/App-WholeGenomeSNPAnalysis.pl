@@ -10,7 +10,6 @@ use File::Basename;
 use File::Temp;
 use JSON::XS;
 use Getopt::Long::Descriptive;
-use lib '/home/nbowers/bvbrc-dev/dev_container/modules/bvbrc_WholeGenomeSNPAnalysis/lib';
 use wgSNPanalysis;
 
 my $wgSNPanalysis = new wgSNPanalysis();
