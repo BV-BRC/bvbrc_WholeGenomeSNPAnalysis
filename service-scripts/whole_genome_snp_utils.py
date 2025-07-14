@@ -429,17 +429,9 @@ def interactive_threshold_heatmap(service_config, metadata_json):
     metadata_json_string, metadata_df = create_metadata_table(metadata_json, "metadata.tsv")
     heatmap_template = """
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-    <br>
-    <h3>SNP Distance Heatmap and Metadata</h3>
+     <h3>SNP Distance Heatmap and Metadata</h3>
+     <h4>Filter and Sort the Data</h4>
     <div class="controls">
-        <label>Weak Linkage Upper Threshold:
-        <input type="number" id="t1" value="10">
-        </label>
-        <label>Strong Linkage Lower Threshold:
-        <input type="number" id="t2" value="40">
-        </label>
-        <button onclick="recolorHeatmap()">Recolor</button>
-        <br><br>
         <label>Choose SNP Matrix:
         <select id="matrixSelector" onchange="recolorHeatmap()">
             <option value="1">All SNPs</option>
@@ -452,9 +444,26 @@ def interactive_threshold_heatmap(service_config, metadata_json):
         <select id="metadataFieldSelect" onchange="recolorHeatmap()">
             <!-- options populated dynamically -->
         </select>
-        </label>
-    </div>
+        </label><br>
+        <h4>Recolor Heatmap According to Linkage Thresholds</h4>
+        <label>Weak Linkage Thresholds:
+        <input type="number" id="t0" value="0" disabled style="width: 40px;">
+        <input type="number" id="t1a" value="10" style="width: 40px;">
+        </label><br><br>
 
+        <label>Mid Linkage Thresholds:
+        <input type="number" id="t1b" value="10" style="width: 40px;">
+        <input type="number" id="t2a" value="40" style="width: 40px;">
+        </label><br><br>
+
+        <label>Strong Linkage Thresholds:
+        <input type="number" id="t2b" value="40" style="width: 40px;">
+        <input type="number" id="t3" placeholder="Max" disabled style="width: 40px;">
+        </label><br>
+        <div style="text-align: left; margin-top: 10px;">
+        <button style="padding: 8px 8px; font-size: 14px;" onclick="recolorHeatmap()">Recolor</button>
+        </div>
+    </div>
     <div id="heatmap" style="width: 800px; height: 800px;"></div>
 
     <script>
@@ -467,6 +476,29 @@ def interactive_threshold_heatmap(service_config, metadata_json):
         const snpMatrix3     = {majority_snpMatrix};
         const metadata      = {metadata_json_string};
 
+        // ===== Map linkage thresholds =====
+        function syncThresholdInputs() {{
+            const t1a = document.getElementById('t1a');
+            const t1b = document.getElementById('t1b');
+            const t2a = document.getElementById('t2a');
+            const t2b = document.getElementById('t2b');
+
+            t1a.addEventListener('input', () => {{
+                t1b.value = t1a.value;
+            }});
+
+            t1b.addEventListener('input', () => {{
+                t1a.value = t1b.value;
+            }});
+            }}
+            t2a.addEventListener('input', () => {{
+                t2b.value = t2a.value;
+            }});
+
+            t2b.addEventListener('input', () => {{
+                t2a.value = t2b.value;
+            }});
+        document.addEventListener('DOMContentLoaded', syncThresholdInputs);     
         // ===== Build dropdown for metadata fields =====
         (function populateMetadataFields() {{
         const select = document.getElementById('metadataFieldSelect');
@@ -546,8 +578,8 @@ def interactive_threshold_heatmap(service_config, metadata_json):
 
         // ===== Main function to draw/update heatmap =====
         function recolorHeatmap() {{
-        const t1 = parseInt(document.getElementById('t1').value);
-        const t2 = parseInt(document.getElementById('t2').value);
+        const t1 = parseInt(document.getElementById('t1a').value);
+        const t2 = parseInt(document.getElementById('t2a').value);
         const selected = document.getElementById('matrixSelector').value;
         const metaField = document.getElementById('metadataFieldSelect').value;
 
