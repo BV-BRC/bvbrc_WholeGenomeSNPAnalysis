@@ -12,6 +12,8 @@ import subprocess
 import sys
 
 from Bio import SeqIO
+from scipy.cluster.hierarchy import linkage, leaves_list
+from scipy.spatial.distance import squareform
 
 def add_to_report_dict(report_data, source_name, item):
     if source_name not in report_data:
@@ -30,6 +32,16 @@ def copy_new_file(clean_fasta_dir, new_name, filename, original_path):
     else:
         print("Copying: {}".format(filename))
         shutil.copy2(original_path, clean_path) 
+
+def cluster_heatmap_data(genome_ids, snp_matrix):
+    # Convert matrix to distance format
+    dist_array = squareform(snp_matrix)
+    # linkage_result = linkage(dist_array, method="average")
+    linkage_result = linkage(dist_array, method="single")
+    idx = leaves_list(linkage_result)
+    clustered_matrix = [[snp_matrix[i][j] for j in idx] for i in idx]
+    clustered_labels = [genome_ids[i] for i in idx]
+    return clustered_labels, clustered_matrix
 
 
 def create_genome_length_bar_plot(clean_data_dir):
@@ -395,15 +407,24 @@ def interactive_threshold_heatmap(service_config, metadata_json):
 
     ### check for each SNP matrix ###
     all_snps_report = os.path.join(work_dir, "all_kSNPdist.report")
-    if os.path.exists(all_snps_report) == True:
+    # if os.path.exists(all_snps_report) == True:
+    if os.path.exists(all_snps_report):
         all_genome_ids, all_snpMatrix = read_ksnp_distance_report(all_snps_report)
+        clustered_labels, clustered_matrix = cluster_heatmap_data(all_genome_ids, all_snpMatrix)
+        all_genome_ids = json.dumps(clustered_labels)
+        all_snpMatrix = json.dumps(clustered_matrix)
     core_snps_report = os.path.join(work_dir,"core_kSNPdist.report")
-    if os.path.exists(core_snps_report) == True:
+    if os.path.exists(core_snps_report):
         core_genome_ids, core_snpMatrix = read_ksnp_distance_report(core_snps_report)
+        clustered_labels, clustered_matrix = cluster_heatmap_data(core_genome_ids, core_snpMatrix)
+        core_genome_ids = json.dumps(clustered_labels)
+        core_snpMatrix = json.dumps(clustered_matrix)
     majority_snps_report = os.path.join(work_dir,"majority_kSNPdist.report")
-    if os.path.exists(majority_snps_report) == True:
+    if os.path.exists(majority_snps_report):
         majority_genome_ids, majority_snpMatrix = read_ksnp_distance_report(majority_snps_report)
-
+        clustered_labels, clustered_matrix = cluster_heatmap_data(majority_genome_ids, majority_snpMatrix)
+        majority_genome_ids = json.dumps(clustered_labels)
+        majority_snpMatrix = json.dumps(clustered_matrix)
     # format the metadata into a string for the report
     metadata_json_string, metadata_df = create_metadata_table(metadata_json, "metadata.tsv")
     heatmap_template = """
