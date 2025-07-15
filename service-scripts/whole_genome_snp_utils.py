@@ -436,7 +436,8 @@ def interactive_threshold_heatmap(service_config, metadata_json):
     # format the metadata into a string for the report
     metadata_json_string, metadata_df = create_metadata_table(metadata_json, "metadata.tsv")
     heatmap_template = """
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <!-- Plotly.js v3.0.1  — last updated June 2025 --> 
+    <script src="https://cdn.plot.ly/plotly-3.0.1.min.js"></script>
      <h3>SNP Distance Heatmap and Metadata</h3>
      <h4>Filter and Sort the Data</h4>
     <div class="controls">
