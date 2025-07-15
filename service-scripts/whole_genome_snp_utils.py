@@ -491,22 +491,42 @@ def interactive_threshold_heatmap(service_config, metadata_json):
             const t2a = document.getElementById('t2a');
             const t2b = document.getElementById('t2b');
 
+            function validateThresholds() {{
+                const t1 = parseFloat(t1a.value);
+                const t2 = parseFloat(t2a.value);
+                console.log(t1);
+                console.log(t2);
+
+                if (t1 > t2) {{
+                    alert("Weak threshold (T1) must be less than or equal to Mid threshold (T2). Resetting T1 to match T2.");
+                    t1a.value = t2;
+                    t1b.value = t2;
+                }}
+            }}
+
             t1a.addEventListener('input', () => {{
                 t1b.value = t1a.value;
+                validateThresholds();
             }});
 
             t1b.addEventListener('input', () => {{
                 t1a.value = t1b.value;
+                validateThresholds();
             }});
-            }}
+
             t2a.addEventListener('input', () => {{
                 t2b.value = t2a.value;
+                validateThresholds();
             }});
 
             t2b.addEventListener('input', () => {{
                 t2a.value = t2b.value;
+                validateThresholds();
             }});
-        document.addEventListener('DOMContentLoaded', syncThresholdInputs);     
+        }}
+            
+        document.addEventListener('DOMContentLoaded', syncThresholdInputs);    
+
         // ===== Build dropdown for metadata fields =====
         (function populateMetadataFields() {{
         const select = document.getElementById('metadataFieldSelect');
