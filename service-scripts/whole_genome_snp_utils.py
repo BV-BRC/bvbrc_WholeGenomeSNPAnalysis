@@ -320,7 +320,7 @@ def define_html_template(input_genome_table, barplot_html, snp_distribution_html
                 {snp_distribution_html}
                 </div>
             </div>
-            <p> This service defines three subcategories of SNPS </p>
+            <p> This service defines three subcategories of SNPs </p>
             <ul style="list-style-type: disc; padding-left: 25;">
             <li><b>Total SNPs</b> includes every SNP identified from all genomes given to the service regardless of how many genomes the SNP is present it.</li>
             <li><b>Core SNPs</b> are present in every genome analyzed.</li>
@@ -345,7 +345,7 @@ def define_html_template(input_genome_table, barplot_html, snp_distribution_html
                 The website offers an interactive view of the trees with the ability to map metadata directly on the tree through the phylogenetic tree viewer. This is accessible by visiting the files ending with ".tre" or ".phyloxml" in your job results directory.
                 <p>
                 <br>
-                <label>Subset:
+                <label>Choose SNP Subcategory:
                     <select id="subsetSelector" onchange="updateSVG()">
                         <option value="SNPs_all">All</option>
                         <option value="core_SNPs">Core</option>
@@ -408,19 +408,26 @@ def interactive_threshold_heatmap(service_config, metadata_json):
 
     ### check for each SNP matrix ###
     all_snps_report = os.path.join(work_dir, "all_kSNPdist.report")
-    # if os.path.exists(all_snps_report) == True:
+    core_snps_report = os.path.join(work_dir,"core_kSNPdist.report")
+    majority_snps_report = os.path.join(work_dir,"majority_kSNPdist.report")
+    if not (os.path.exists(all_snps_report) or os.path.exists(core_snps_report) or os.path.exists(majority_snps_report)):
+        msg = "Distance matrix missing... cannot create heatmap"
+        sys.stderr.write(msg)
+        heatmap_template = ""
+        metadata_json_string = ""
+        return heatmap_template, metadata_json_string
     if os.path.exists(all_snps_report):
         all_genome_ids, all_snpMatrix = read_ksnp_distance_report(all_snps_report)
         clustered_labels, clustered_matrix = cluster_heatmap_data(all_genome_ids, all_snpMatrix)
         all_genome_ids = json.dumps(clustered_labels)
         all_snpMatrix = json.dumps(clustered_matrix)
-    core_snps_report = os.path.join(work_dir,"core_kSNPdist.report")
+    
     if os.path.exists(core_snps_report):
         core_genome_ids, core_snpMatrix = read_ksnp_distance_report(core_snps_report)
         clustered_labels, clustered_matrix = cluster_heatmap_data(core_genome_ids, core_snpMatrix)
         core_genome_ids = json.dumps(clustered_labels)
         core_snpMatrix = json.dumps(clustered_matrix)
-    majority_snps_report = os.path.join(work_dir,"majority_kSNPdist.report")
+
     if os.path.exists(majority_snps_report):
         majority_genome_ids, majority_snpMatrix = read_ksnp_distance_report(majority_snps_report)
         clustered_labels, clustered_matrix = cluster_heatmap_data(majority_genome_ids, majority_snpMatrix)
@@ -433,7 +440,7 @@ def interactive_threshold_heatmap(service_config, metadata_json):
      <h3>SNP Distance Heatmap and Metadata</h3>
      <h4>Filter and Sort the Data</h4>
     <div class="controls">
-        <label>Choose SNP Matrix:
+        <label>Choose SNP Subcategory:
         <select id="matrixSelector" onchange="recolorHeatmap()">
             <option value="1">All SNPs</option>
             <option value="2">Core SNPs</option>
@@ -825,7 +832,7 @@ def organize_files_by_type(work_dir, destination_dir):
             elif filename == "SNPs_all_matrix":
                 new_path = os.path.join(All_SNPs_dir, (filename + ".txt"))
                 shutil.copy(file_path, new_path)
-            # else copy all files to the all SNPS dir
+            # else copy all files to the all SNPs dir
             else:
                 shutil.copy(file_path, All_SNPs_dir)
         if firstword == "annotate" and os.path.getsize(file_path) > 0:
@@ -848,7 +855,7 @@ def organize_files_by_type(work_dir, destination_dir):
             elif filename.startswith("core_kSNPdist"):
                 # shutil.copy(file_path, work_dir)
                 pass
-            # else copy all files to the core SNPS dir
+            # else copy all files to the core SNPs dir
             else:
                 shutil.copy(file_path, core_snp_dir)
         if firstword == "COUNT" or firstword == "tip" or firstword == "Node" or firstword == "NJ.dist.matrix":
@@ -1053,7 +1060,7 @@ def write_homoplastic_snp_table(report_data):
     majority_snps_data = []
     # Iterate over the dictionary
     for key, value in report_data.items():
-        # get all SNPS
+        # get all SNPs
         if "COUNT_Homoplastic_SNPs.SNPs_all." in key:
             method = key.split('.')[-1]
             homoplastic_count = value[0]['Number_Homoplastic_SNPs']
