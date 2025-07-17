@@ -101,9 +101,7 @@ sub run
         print($genome_group_path);
         my $group_name = basename($genome_group_path);
         my $api = P3DataAPI->new;
-        # my $group_genome_ids = $api->retrieve_patric_ids_from_genome_group($genome_group_path);
         my @group_genome_ids = $api->retrieve_patric_ids_from_genome_group($genome_group_path);
-        # # $api ->retrieve_contigs_in_genomes($group_genome_ids, $raw_fasta_dir, "%s");
         $api ->retrieve_contigs_in_genomes(@group_genome_ids, $raw_fasta_dir, "%s");
         # # my @genome_metadata_fields = (
         # #   "genome_name", "genome_id", "ncbi_taxon_id", "organism_name", "taxon_lineage_ids", "taxon_lineage_names",

@@ -12,6 +12,8 @@ import subprocess
 import sys
 
 from Bio import SeqIO
+from scipy.cluster.hierarchy import linkage, leaves_list
+from scipy.spatial.distance import squareform
 
 def add_to_report_dict(report_data, source_name, item):
     if source_name not in report_data:
@@ -30,6 +32,16 @@ def copy_new_file(clean_fasta_dir, new_name, filename, original_path):
     else:
         print("Copying: {}".format(filename))
         shutil.copy2(original_path, clean_path) 
+
+def cluster_heatmap_data(genome_ids, snp_matrix):
+    # Convert matrix to distance format
+    dist_array = squareform(snp_matrix)
+    # linkage_result = linkage(dist_array, method="average")
+    linkage_result = linkage(dist_array, method="single")
+    idx = leaves_list(linkage_result)
+    clustered_matrix = [[snp_matrix[i][j] for j in idx] for i in idx]
+    clustered_labels = [genome_ids[i] for i in idx]
+    return clustered_labels, clustered_matrix
 
 
 def create_genome_length_bar_plot(clean_data_dir):
@@ -77,6 +89,7 @@ def create_metadata_table(metadata_json, tsv_out):
 
 
 def define_html_template(input_genome_table, barplot_html, snp_distribution_html, homoplastic_snps_html, heatmap_html, majority_threshold, metadata_json_string):
+    majority_percentage = majority_threshold * 100
     html_template = """
             <!DOCTYPE html>
             <html lang="en">
@@ -118,6 +131,19 @@ def define_html_template(input_genome_table, barplot_html, snp_distribution_html
                     .warning {{ 
                         color: black; 
                     }}
+                    .heatmap-controls,
+                    .linkage-controls {{
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 10px;
+                    align-items: center;
+                    margin-bottom: 1em;
+                    }}
+                    .heatmap-controls h4,
+                    .linkage-controls h4 {{
+                    flex-basis: 100%;
+                    margin: 0;
+                    }}
                     table, th, td {{ 
                         border: 1px solid black; border-collapse: collapse; 
                     }}
@@ -156,8 +182,8 @@ def define_html_template(input_genome_table, barplot_html, snp_distribution_html
                     box-sizing: border-box;
                     }}
                 </style>
-                <!-- Plotly -->
-                <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+                <!-- Plotly.js v3.0.1  — last updated June 2025 --> 
+                <script src="https://cdn.plot.ly/plotly-3.0.1.min.js"></script>
                 <!-- DataTables CSS -->
                 <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
                 <header>
@@ -307,11 +333,11 @@ def define_html_template(input_genome_table, barplot_html, snp_distribution_html
                 {snp_distribution_html}
                 </div>
             </div>
-            <p> This service defines three subcategories of SNPS </p>
+            <p> This service defines three subsets of SNPs </p>
             <ul style="list-style-type: disc; padding-left: 25;">
             <li><b>Total SNPs</b> includes every SNP identified from all genomes given to the service regardless of how many genomes the SNP is present it.</li>
             <li><b>Core SNPs</b> are present in every genome analyzed.</li>
-            <li><b>Majority SNPs</b> are present in at least {majority_threshold} percentage of the genomes analyzed.</li>
+            <li><b>Majority SNPs</b> are present in at least {majority_percentage} percent of the genomes analyzed.</li>
             </ul>
             <h3>Homoplastic SNPs</h3>
             {homoplastic_snps_html}
@@ -332,7 +358,7 @@ def define_html_template(input_genome_table, barplot_html, snp_distribution_html
                 The website offers an interactive view of the trees with the ability to map metadata directly on the tree through the phylogenetic tree viewer. This is accessible by visiting the files ending with ".tre" or ".phyloxml" in your job results directory.
                 <p>
                 <br>
-                <label>Subset:
+                <label>Choose SNP Subset:
                     <select id="subsetSelector" onchange="updateSVG()">
                         <option value="SNPs_all">All</option>
                         <option value="core_SNPs">Core</option>
@@ -384,7 +410,7 @@ def define_html_template(input_genome_table, barplot_html, snp_distribution_html
         </body>
         </html>
         """.format(input_genome_table = input_genome_table, barplot_html=barplot_html, snp_distribution_html=snp_distribution_html,  homoplastic_snps_html=homoplastic_snps_html, \
-                heatmap_html=heatmap_html, majority_threshold=majority_threshold, metadata_json_string=metadata_json_string)
+                heatmap_html=heatmap_html, majority_percentage=majority_percentage, majority_threshold=majority_threshold, metadata_json_string=metadata_json_string)
     return html_template
 
 
@@ -395,47 +421,78 @@ def interactive_threshold_heatmap(service_config, metadata_json):
 
     ### check for each SNP matrix ###
     all_snps_report = os.path.join(work_dir, "all_kSNPdist.report")
-    if os.path.exists(all_snps_report) == True:
-        all_genome_ids, all_snpMatrix = read_ksnp_distance_report(all_snps_report)
     core_snps_report = os.path.join(work_dir,"core_kSNPdist.report")
-    if os.path.exists(core_snps_report) == True:
-        core_genome_ids, core_snpMatrix = read_ksnp_distance_report(core_snps_report)
     majority_snps_report = os.path.join(work_dir,"majority_kSNPdist.report")
-    if os.path.exists(majority_snps_report) == True:
-        majority_genome_ids, majority_snpMatrix = read_ksnp_distance_report(majority_snps_report)
+    if not (os.path.exists(all_snps_report) or os.path.exists(core_snps_report) or os.path.exists(majority_snps_report)):
+        msg = "Distance matrix missing... cannot create heatmap"
+        sys.stderr.write(msg)
+        heatmap_template = ""
+        metadata_json_string = ""
+        return heatmap_template, metadata_json_string
+    if os.path.exists(all_snps_report):
+        all_genome_ids, all_snpMatrix = read_ksnp_distance_report(all_snps_report)
+        clustered_labels, clustered_matrix = cluster_heatmap_data(all_genome_ids, all_snpMatrix)
+        all_genome_ids = json.dumps(clustered_labels)
+        all_snpMatrix = json.dumps(clustered_matrix)
+    
+    if os.path.exists(core_snps_report):
+        core_genome_ids, core_snpMatrix = read_ksnp_distance_report(core_snps_report)
+        clustered_labels, clustered_matrix = cluster_heatmap_data(core_genome_ids, core_snpMatrix)
+        core_genome_ids = json.dumps(clustered_labels)
+        core_snpMatrix = json.dumps(clustered_matrix)
 
+    if os.path.exists(majority_snps_report):
+        majority_genome_ids, majority_snpMatrix = read_ksnp_distance_report(majority_snps_report)
+        clustered_labels, clustered_matrix = cluster_heatmap_data(majority_genome_ids, majority_snpMatrix)
+        majority_genome_ids = json.dumps(clustered_labels)
+        majority_snpMatrix = json.dumps(clustered_matrix)
     # format the metadata into a string for the report
     metadata_json_string, metadata_df = create_metadata_table(metadata_json, "metadata.tsv")
     heatmap_template = """
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-    <br>
-    <h3>SNP Distance Heatmap and Metadata</h3>
-    <div class="controls">
-        <label>Weak Linkage Upper Threshold:
-        <input type="number" id="t1" value="10">
-        </label>
-        <label>Strong Linkage Lower Threshold:
-        <input type="number" id="t2" value="40">
-        </label>
-        <button onclick="recolorHeatmap()">Recolor</button>
-        <br><br>
-        <label>Choose SNP Matrix:
+    <!-- Plotly.js v3.0.1  — last updated June 2025 --> 
+    <script src="https://cdn.plot.ly/plotly-3.0.1.min.js"></script>
+     <h3>SNP Distance Heatmap and Metadata</h3>
+     <p>The SNP Distance Heatmap visualizes pairwise single nucleotide polymorphism (SNP) differences between genomes. Each cell in the heatmap represents the SNP distance - how many SNPs differ - between two genomes, highlighting genetic similarity or divergence across a dataset. Lower distances (fewer differences) typically indicate closer genetic relationships.
+     Hover over the plot to view the SNP distance value and metadata. <p>
+         <div class="heatmap-controls">
+     <h4>Filter and Sort the Data:</h4>
+        <label>Choose SNP Subset:
         <select id="matrixSelector" onchange="recolorHeatmap()">
             <option value="1">All SNPs</option>
             <option value="2">Core SNPs</option>
             <option value="3">Majority SNPs</option>
         </select>
         </label>
-        <br><br>
-        <label>Reorder by Metadata Field:
+        <label>Reorder Heatmap:
         <select id="metadataFieldSelect" onchange="recolorHeatmap()">
             <!-- options populated dynamically -->
         </select>
         </label>
+        </div>
+        <div class="linkage-controls" style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+        <h4>Recolor Heatmap According to Linkage Thresholds:</h4>
+        <label>Weak Linkage Thresholds:
+        <input type="number" id="t0" value="0" disabled style="width: 40px;">
+        <input type="number" id="t1a" value="10" style="width: 40px;">
+        </label>
+
+        <label>Mid Linkage Thresholds:
+        <input type="number" id="t1b" value="10" style="width: 40px;">
+        <input type="number" id="t2a" value="40" style="width: 40px;">
+        </label>
+
+        <label>Strong Linkage Thresholds:
+        <input type="number" id="t2b" value="40" style="width: 40px;">
+        <input type="number" id="t3" placeholder="Max" disabled style="width: 40px;">
+        </label>
+
+        <button style="padding: 8px 8px; font-size: 14px;" onclick="recolorHeatmap()">Recolor</button>
+        </div>
     </div>
-
-    <div id="heatmap" style="width: 800px; height: 800px;"></div>
-
+    <div class="plot-container">
+    <div class="plot" id="heatmap" style="width: 800px; height: 800px;"></div>
+    <!-- <div class="plot" id="heatmap" style="width: 800px; height: 800px;"></div> -->
+    </div>
     <script>
         // ===== Embedded data placeholders =====
         const genomeLabels1 = {all_genome_ids};
@@ -446,6 +503,49 @@ def interactive_threshold_heatmap(service_config, metadata_json):
         const snpMatrix3     = {majority_snpMatrix};
         const metadata      = {metadata_json_string};
 
+        // ===== Map linkage thresholds =====
+        function syncThresholdInputs() {{
+            const t1a = document.getElementById('t1a');
+            const t1b = document.getElementById('t1b');
+            const t2a = document.getElementById('t2a');
+            const t2b = document.getElementById('t2b');
+
+            function validateThresholds() {{
+                const t1 = parseFloat(t1a.value);
+                const t2 = parseFloat(t2a.value);
+                console.log(t1);
+                console.log(t2);
+
+                if (t1 > t2) {{
+                    alert("Weak threshold (T1) must be less than or equal to Mid threshold (T2). Resetting T1 to match T2.");
+                    t1a.value = t2;
+                    t1b.value = t2;
+                }}
+            }}
+
+            t1a.addEventListener('input', () => {{
+                t1b.value = t1a.value;
+                validateThresholds();
+            }});
+
+            t1b.addEventListener('input', () => {{
+                t1a.value = t1b.value;
+                validateThresholds();
+            }});
+
+            t2a.addEventListener('input', () => {{
+                t2b.value = t2a.value;
+                validateThresholds();
+            }});
+
+            t2b.addEventListener('input', () => {{
+                t2a.value = t2b.value;
+                validateThresholds();
+            }});
+        }}
+            
+        document.addEventListener('DOMContentLoaded', syncThresholdInputs);    
+
         // ===== Build dropdown for metadata fields =====
         (function populateMetadataFields() {{
         const select = document.getElementById('metadataFieldSelect');
@@ -454,7 +554,7 @@ def interactive_threshold_heatmap(service_config, metadata_json):
         // Add a default empty option
         const defaultOption = document.createElement('option');
         defaultOption.value = "";
-        defaultOption.textContent = "Select";
+        defaultOption.textContent = "Hierarchical Clustering";
         select.appendChild(defaultOption);
         allKeys.forEach(field => {{
             const opt = document.createElement('option');
@@ -525,8 +625,8 @@ def interactive_threshold_heatmap(service_config, metadata_json):
 
         // ===== Main function to draw/update heatmap =====
         function recolorHeatmap() {{
-        const t1 = parseInt(document.getElementById('t1').value);
-        const t2 = parseInt(document.getElementById('t2').value);
+        const t1 = parseInt(document.getElementById('t1a').value);
+        const t2 = parseInt(document.getElementById('t2a').value);
         const selected = document.getElementById('matrixSelector').value;
         const metaField = document.getElementById('metadataFieldSelect').value;
 
@@ -570,7 +670,8 @@ def interactive_threshold_heatmap(service_config, metadata_json):
             const meta1 = idToMeta[id1] || {{}};
             const meta2 = idToMeta[id2] || {{}};
 
-            let hover = `Genome 1: ${{id1}}<br>`;
+            let hover = `SNP Distance: ${{val}}<br><br>`;
+            hover += `Genome 1: ${{id1}}<br>`;
             for (const [field, fieldVal] of Object.entries(meta1)) {{
                 hover += `${{field}}: ${{fieldVal}}<br>`;
             }}
@@ -579,8 +680,6 @@ def interactive_threshold_heatmap(service_config, metadata_json):
             for (const [field, fieldVal] of Object.entries(meta2)) {{
                 hover += `${{field}}: ${{fieldVal}}<br>`;
             }}
-
-            hover += `SNP Distance: ${{val}}`;
             return hover;
             }})
         );
@@ -737,9 +836,9 @@ def make_genome_bar_chart(data, report_data, majority_threshold):
     ))
 
     fig.update_layout(
-    title='SNP Distribution by SNP Subcategory',
+    title='SNP Distribution by SNP subset',
     xaxis_title='Count',
-    yaxis_title='SNP Subcategory',
+    yaxis_title='SNP subset',
     template='plotly_white'
     )
     fig.write_html("snp_distribution_bar_chart_offline.html", include_plotlyjs=False)
@@ -772,7 +871,7 @@ def organize_files_by_type(work_dir, destination_dir):
             elif filename == "SNPs_all_matrix":
                 new_path = os.path.join(All_SNPs_dir, (filename + ".txt"))
                 shutil.copy(file_path, new_path)
-            # else copy all files to the all SNPS dir
+            # else copy all files to the all SNPs dir
             else:
                 shutil.copy(file_path, All_SNPs_dir)
         if firstword == "annotate" and os.path.getsize(file_path) > 0:
@@ -795,7 +894,7 @@ def organize_files_by_type(work_dir, destination_dir):
             elif filename.startswith("core_kSNPdist"):
                 # shutil.copy(file_path, work_dir)
                 pass
-            # else copy all files to the core SNPS dir
+            # else copy all files to the core SNPs dir
             else:
                 shutil.copy(file_path, core_snp_dir)
         if firstword == "COUNT" or firstword == "tip" or firstword == "Node" or firstword == "NJ.dist.matrix":
@@ -1000,7 +1099,7 @@ def write_homoplastic_snp_table(report_data):
     majority_snps_data = []
     # Iterate over the dictionary
     for key, value in report_data.items():
-        # get all SNPS
+        # get all SNPs
         if "COUNT_Homoplastic_SNPs.SNPs_all." in key:
             method = key.split('.')[-1]
             homoplastic_count = value[0]['Number_Homoplastic_SNPs']
