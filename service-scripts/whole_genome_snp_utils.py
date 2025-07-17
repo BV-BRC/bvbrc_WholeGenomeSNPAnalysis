@@ -131,6 +131,19 @@ def define_html_template(input_genome_table, barplot_html, snp_distribution_html
                     .warning {{ 
                         color: black; 
                     }}
+                    .heatmap-controls,
+                    .linkage-controls {{
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 10px;
+                    align-items: center;
+                    margin-bottom: 1em;
+                    }}
+                    .heatmap-controls h4,
+                    .linkage-controls h4 {{
+                    flex-basis: 100%;
+                    margin: 0;
+                    }}
                     table, th, td {{ 
                         border: 1px solid black; border-collapse: collapse; 
                     }}
@@ -439,8 +452,10 @@ def interactive_threshold_heatmap(service_config, metadata_json):
     <!-- Plotly.js v3.0.1  — last updated June 2025 --> 
     <script src="https://cdn.plot.ly/plotly-3.0.1.min.js"></script>
      <h3>SNP Distance Heatmap and Metadata</h3>
-     <h4>Filter and Sort the Data</h4>
-    <div class="controls">
+     <p>The SNP Distance Heatmap visualizes pairwise single nucleotide polymorphism (SNP) differences between genomes. Each cell in the heatmap represents the SNP distance - how many SNPs differ - between two genomes, highlighting genetic similarity or divergence across a dataset. Lower distances (fewer differences) typically indicate closer genetic relationships.
+     Hover over the plot to view the SNP distance value and metadata. <p>
+         <div class="heatmap-controls">
+     <h4>Filter and Sort the Data:</h4>
         <label>Choose SNP Subset:
         <select id="matrixSelector" onchange="recolorHeatmap()">
             <option value="1">All SNPs</option>
@@ -448,28 +463,29 @@ def interactive_threshold_heatmap(service_config, metadata_json):
             <option value="3">Majority SNPs</option>
         </select>
         </label>
-        <br><br>
-        <label>Reorder by Metadata Field:
+        <label>Reorder Heatmap:
         <select id="metadataFieldSelect" onchange="recolorHeatmap()">
             <!-- options populated dynamically -->
         </select>
-        </label><br>
-        <h4>Recolor Heatmap According to Linkage Thresholds</h4>
+        </label>
+        </div>
+        <div class="linkage-controls" style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+        <h4>Recolor Heatmap According to Linkage Thresholds:</h4>
         <label>Weak Linkage Thresholds:
         <input type="number" id="t0" value="0" disabled style="width: 40px;">
         <input type="number" id="t1a" value="10" style="width: 40px;">
-        </label><br><br>
+        </label>
 
         <label>Mid Linkage Thresholds:
         <input type="number" id="t1b" value="10" style="width: 40px;">
         <input type="number" id="t2a" value="40" style="width: 40px;">
-        </label><br><br>
+        </label>
 
         <label>Strong Linkage Thresholds:
         <input type="number" id="t2b" value="40" style="width: 40px;">
         <input type="number" id="t3" placeholder="Max" disabled style="width: 40px;">
-        </label><br>
-        <div style="text-align: left; margin-top: 10px;">
+        </label>
+
         <button style="padding: 8px 8px; font-size: 14px;" onclick="recolorHeatmap()">Recolor</button>
         </div>
     </div>
@@ -538,7 +554,7 @@ def interactive_threshold_heatmap(service_config, metadata_json):
         // Add a default empty option
         const defaultOption = document.createElement('option');
         defaultOption.value = "";
-        defaultOption.textContent = "Select";
+        defaultOption.textContent = "Hierarchical Clustering";
         select.appendChild(defaultOption);
         allKeys.forEach(field => {{
             const opt = document.createElement('option');
