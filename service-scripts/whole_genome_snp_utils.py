@@ -320,7 +320,7 @@ def define_html_template(input_genome_table, barplot_html, snp_distribution_html
                 {snp_distribution_html}
                 </div>
             </div>
-            <p> This service defines three subcategories of SNPs </p>
+            <p> This service defines three subsets of SNPs </p>
             <ul style="list-style-type: disc; padding-left: 25;">
             <li><b>Total SNPs</b> includes every SNP identified from all genomes given to the service regardless of how many genomes the SNP is present it.</li>
             <li><b>Core SNPs</b> are present in every genome analyzed.</li>
@@ -345,7 +345,7 @@ def define_html_template(input_genome_table, barplot_html, snp_distribution_html
                 The website offers an interactive view of the trees with the ability to map metadata directly on the tree through the phylogenetic tree viewer. This is accessible by visiting the files ending with ".tre" or ".phyloxml" in your job results directory.
                 <p>
                 <br>
-                <label>Choose SNP Subcategory:
+                <label>Choose SNP Subset:
                     <select id="subsetSelector" onchange="updateSVG()">
                         <option value="SNPs_all">All</option>
                         <option value="core_SNPs">Core</option>
@@ -441,7 +441,7 @@ def interactive_threshold_heatmap(service_config, metadata_json):
      <h3>SNP Distance Heatmap and Metadata</h3>
      <h4>Filter and Sort the Data</h4>
     <div class="controls">
-        <label>Choose SNP Subcategory:
+        <label>Choose SNP Subset:
         <select id="matrixSelector" onchange="recolorHeatmap()">
             <option value="1">All SNPs</option>
             <option value="2">Core SNPs</option>
@@ -473,8 +473,10 @@ def interactive_threshold_heatmap(service_config, metadata_json):
         <button style="padding: 8px 8px; font-size: 14px;" onclick="recolorHeatmap()">Recolor</button>
         </div>
     </div>
-    <div id="heatmap" style="width: 800px; height: 800px;"></div>
-
+    <div class="plot-container">
+    <div class="plot" id="heatmap" style="width: 800px; height: 800px;"></div>
+    <!-- <div class="plot" id="heatmap" style="width: 800px; height: 800px;"></div> -->
+    </div>
     <script>
         // ===== Embedded data placeholders =====
         const genomeLabels1 = {all_genome_ids};
@@ -818,9 +820,9 @@ def make_genome_bar_chart(data, report_data, majority_threshold):
     ))
 
     fig.update_layout(
-    title='SNP Distribution by SNP Subcategory',
+    title='SNP Distribution by SNP subset',
     xaxis_title='Count',
-    yaxis_title='SNP Subcategory',
+    yaxis_title='SNP subset',
     template='plotly_white'
     )
     fig.write_html("snp_distribution_bar_chart_offline.html", include_plotlyjs=False)
