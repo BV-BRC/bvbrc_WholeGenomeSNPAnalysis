@@ -50,7 +50,8 @@ def create_genome_length_bar_plot(clean_data_dir):
         if filename.endswith(".fasta") or filename.endswith(".fa") or filename.endswith(".fna"):
             file_path = os.path.join(clean_data_dir, filename)
             total_length = sum(len(record.seq) for record in SeqIO.parse(file_path, "fasta"))
-            genome_lengths.append({"Genome": filename, "Length": total_length})
+            display_name = os.path.splitext(filename)[0].replace("_", ".")
+            genome_lengths.append({"Genome": display_name, "Length": total_length})
     # Bar Plot
     fig = px.bar(genome_lengths, 
                  x="Genome", 
@@ -73,7 +74,7 @@ def create_metadata_table(metadata_json, tsv_out):
     # Convert genome_id: replace '.' with '_'
     for record in metadata:
         # match the style of the genome ids in the heatmap
-        record["genome_id"] = record["genome_id"].replace(".", "_")
+        record["genome_id"] = record["genome_id"].replace("_", ".")
     metadata_df = pd.json_normalize(metadata)
 
     # Get all unique headers from the JSON data
@@ -171,29 +172,10 @@ def define_html_template(input_genome_table, barplot_html, snp_distribution_html
                         width: 100%;
                     }}
                     }}
-                    .side-by-side-container {{
-                        border: 1px dashed red;
-                        display: flex;
-                        align-items: center;
-                        flex-wrap: wrap;
-                        gap: 10px;
-                        justify-content: space-between;
-                        align-items: flex-start;
-                    }}
-                    .panel {{
-                        border: 1px solid blue;
-                        background: rgba(0, 0, 255, 0.05);
-                    }}
-                    .panel.heatmap {{
-                        flex: 1 1 50%;
-                        min-width: 350px;
-                     }}
-                    .panel.svgContainer {{
-                            flex: 1 1 50%;
-                            max-width: 100%;
-                            overflow-x auto;
-                            align-items: center;
-                            justify-content: center;
+                    #svgContainer {{
+                        width: 100%;
+                        overflow-x: auto;
+                        margin-top: 8px;
                     }}
                     th input {{
                         width: 100%;
@@ -427,10 +409,9 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
     <script src="https://cdn.plot.ly/plotly-3.0.1.min.js"></script>
      <h3>SNP Distance Heatmap and Metadata</h3>
      <p>The SNP Distance Heatmap visualizes pairwise single nucleotide polymorphism (SNP) differences between genomes. Each cell in the heatmap represents the SNP distance - how many SNPs differ - between two genomes, highlighting genetic similarity or divergence across a dataset. Lower distances (fewer differences) typically indicate closer genetic relationships.
-     Hover over the plot to view the SNP distance value and metadata. <p>
+     Hover over any cell to view the genome IDs and SNP distance. <strong>Click any cell</strong> to compare metadata for that pair in the panel below. <p>
          <div class="heatmap-controls">
      <h4>Filter and Sort the Data:</h4>
-     <!-- nb dev -->
         <label>Choose SNP Subset:
         <select id="matrixSelector" onchange="recolorHeatmap(); updateSVG();">
             <option value="1">All SNPs</option>
@@ -442,13 +423,6 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
         <select id="metadataFieldSelect" onchange="recolorHeatmap()">
             <!-- options populated dynamically -->
         </select>
-        </label>
-        <label>Choose Tree Building Method:
-            <select id="methodSelector" onchange="updateSVG()">
-                <option value="ML">Maximum Likelihood</option>
-                <option value="NJ">Neighbor Joining</option>
-                <option value="parsimony">Parsimony</option>
-            </select>
         </label>
         </div>
         <div class="linkage-controls" style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
@@ -471,13 +445,7 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
         <button style="padding: 8px 8px; font-size: 14px;" onclick="recolorHeatmap()">Recolor</button>
         </div>
     </div>
-    <!-- <div class="plot-container"> -->
-    <div class="side-by-side-container">
-    <div class="panel" id="heatmap"></div>
-    <div class="panel" id="svgContainer">
-    <!-- SVG will be loaded here -->
-    </div>
-    </div>
+    <div id="heatmap" style="width:100%;"></div>
 
     <!-- Genome comparison panel (appears on cell click) -->
     <div id="comparisonPanel" style="display:none; margin-top:18px; border:1px solid #ccc;
@@ -494,6 +462,33 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
         </div>
       </div>
     </div>
+
+    <!-- ============================================================ -->
+    <!-- PHYLOGENETIC TREES                                            -->
+    <!-- ============================================================ -->
+    <h3 style="margin-top:32px;">Phylogenetic Trees</h3>
+    <p>View a static image of the trees according to each SNP subset and each tree building method.
+    An interactive view of the tree annotated with metadata is available in the job results in the
+    directory labeled "Trees". The website offers an interactive view of the trees with the ability
+    to map metadata directly on the tree through the phylogenetic tree viewer. This is accessible
+    by visiting the files ending with ".tre" or ".phyloxml" in your job results directory.</p>
+    <div style="display:flex; flex-wrap:wrap; gap:16px; align-items:center; margin-bottom:12px;">
+      <label>Choose SNP Subset:
+        <select id="treeSNPSelector" onchange="updateSVG()">
+          <option value="1">All</option>
+          <option value="2">Core</option>
+          <option value="3">Majority</option>
+        </select>
+      </label>
+      <label>Tree Building Method:
+        <select id="methodSelector" onchange="updateSVG()">
+          <option value="ML">Maximum Likelihood</option>
+          <option value="NJ">Neighbor Joining</option>
+          <option value="parsimony">Parsimony</option>
+        </select>
+      </label>
+    </div>
+    <div id="svgContainer"></div>
 
     <script>
         // ===== Embedded data placeholders =====
@@ -710,25 +705,12 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
             row.map(val => assignBin(val, t1, t2, maxVal))
         );
 
-        // Build hoverText including all metadata fields
+        // Build hoverText: genome ids, SNP distance, click prompt
         const hoverText = snpMatrix.map((row, i) =>
             row.map((val, j) => {{
             const id1 = genomeLabels[i];
             const id2 = genomeLabels[j];
-            const meta1 = idToMeta[id1] || {{}};
-            const meta2 = idToMeta[id2] || {{}};
-
-            let hover = `SNP Distance: ${{val}}<br><br>`;
-            hover += `Genome 1: ${{id1}}<br>`;
-            for (const [field, fieldVal] of Object.entries(meta1)) {{
-                hover += `${{field}}: ${{fieldVal}}<br>`;
-            }}
-
-            hover += `<br>Genome 2: ${{id2}}<br>`;
-            for (const [field, fieldVal] of Object.entries(meta2)) {{
-                hover += `${{field}}: ${{fieldVal}}<br>`;
-            }}
-            return hover;
+            return `${{id1}} vs ${{id2}}<br>SNP Distance: ${{val}}<br><i>Click to show metadata</i>`;
             }})
         );
 
@@ -754,8 +736,8 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
         const layout = {{
             title: `SNP Heatmap (Thresholds: ${{t1}}, ${{t2}})` +
                 (metaField ? ` – Reordered by “${{metaField}}”` : ""),
-            xaxis: {{ tickangle: 45 }},
-            yaxis: {{ tickangle: 45 }}
+            xaxis: {{ type: 'category', tickangle: 45 }},
+            yaxis: {{ type: 'category', tickangle: 45 }}
         }};
 
         currentLabels = genomeLabels;
@@ -764,50 +746,33 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
         document.getElementById('heatmap').on('plotly_click', onHeatmapClick);
         }}
 
-        // Tree selection
-        // ===== Tree selection =====
-        // nb dev
-        <!-- keeping its on function for better reusability NB July 2025 -->
+        // ===== Tree viewer =====
         function updateSVG() {{
-                // this is from above 
-                // const selected = document.getElementById('matrixSelector').value;
-                const data_input = document.getElementById('matrixSelector').value;
-                const method = document.getElementById('methodSelector').value;
-                let tree_type = document.getElementById('methodSelector').value;
-                
-                
-                console.log(data_input);
-                console.log("nicole here");
-
-                // Map input from heatmap selection to filepath for images
-                const fp_map = {{
+            const data_input = document.getElementById('treeSNPSelector').value;
+            const method = document.getElementById('methodSelector').value;
+            const fp_map = {{
                 "1": "SNPs_all",
                 "2": "core_SNPs",
                 "3": "SNPs_in_majority{majority_threshold}"
-                }};
+            }};
+            const tree_type = fp_map[data_input] || "SNPs_all";
+            const svgPath = `report_supporting_documents/tree.${{tree_type}}.${{method}}.tre.svg`;
+            fetch(svgPath)
+                .then(response => {{
+                    if (!response.ok) throw new Error('SVG not found');
+                    return response.text();
+                }})
+                .then(svgContent => {{
+                    document.getElementById('svgContainer').innerHTML = svgContent;
+                }})
+                .catch(() => {{
+                    document.getElementById('svgContainer').innerHTML =
+                        '<p style="color:#555;">Tree not available for this combination. ' +
+                        'Ensure the <code>report_supporting_documents</code> directory is in ' +
+                        'the same folder as this report file.</p>';
+                }});
+        }}
 
-                if (fp_map[data_input]) {{
-                    tree_type = fp_map[data_input];
-                    }}
-
-                console.log(tree_type);
-                const svgPath = `report_supporting_documents/tree.${{tree_type}}.${{method}}.tre.svg`;
-                console.log(svgPath);
-                // Load the SVG
-                fetch(svgPath)
-                    .then(response => {{
-                        if (!response.ok) {{
-                            throw new Error('SVG not found');
-                        }}
-                        return response.text();
-                    }})
-                    .then(svgContent => {{
-                        document.getElementById('svgContainer').innerHTML = svgContent;
-                    }})
-                    .catch(error => {{
-                        document.getElementById('svgContainer').innerHTML = `<p style="color:black;">Error loading SVG: Ensure the directory "report_supporting_documents" is in the same workspace directory as this report file. If so check if the specific tree exists within the out directory. Depending on your input data the tree method may be unable to generate a tree for a given subset.</p>`;
-                    }});
-                }}
         // Initial render
         recolorHeatmap();
         updateSVG();
@@ -1100,7 +1065,7 @@ def parse_kchooser_report(report_data, kchooser_report):
     # Extract median genome and its length
     match = re.search(r'The median length genome was (\S+)', text)
     if match:
-        kchooser_data["Median Genome"] = match.group(1)
+        kchooser_data["Median Genome"] = match.group(1).replace("_", ".")
 
     match = re.search(r'Its length is (\d+)', text)
     if match:
@@ -1108,7 +1073,7 @@ def parse_kchooser_report(report_data, kchooser_report):
     # Extract shortest genome and its length
     match = re.search(r'The shortest genomes is (\S+) its length is (\d+)', text)
     if match:
-        kchooser_data["Shortest Genome"] = match.group(1)
+        kchooser_data["Shortest Genome"] = match.group(1).replace("_", ".")
         kchooser_data["Shortest Genome Length"] = int(match.group(2))
     # return kchooser_data
     report_data = add_to_report_dict(report_data, "kchooser_report", kchooser_data)
@@ -1157,8 +1122,8 @@ def read_ksnp_distance_report(ksnp_dist_report):
     pivot_df.index = pivot_df.index.astype(str)
     pivot_df.columns = pivot_df.columns.astype(str)
 
-    # give the data as lists of lists 
-    genome_ids = pivot_df.columns.tolist()
+    # give the data as lists of lists, replacing _ with . to match metadata IDs
+    genome_ids = [gid.replace("_", ".") for gid in pivot_df.columns.tolist()]
     snpMatrix = pivot_df.values.tolist()
     return genome_ids, snpMatrix
 
