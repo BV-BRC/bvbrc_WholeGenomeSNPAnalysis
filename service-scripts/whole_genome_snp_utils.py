@@ -377,12 +377,12 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
 
     # Paths for both data types for all three SNP subsets
     file_paths = {
-        "all":      {"report": os.path.join(work_dir, "all_kSNPdist.report"),
-                     "matrix": os.path.join(work_dir, "all_kSNPdist.matrix")},
-        "core":     {"report": os.path.join(work_dir, "core_kSNPdist.report"),
-                     "matrix": os.path.join(work_dir, "core_kSNPdist.matrix")},
-        "majority": {"report": os.path.join(work_dir, "majority_kSNPdist.report"),
-                     "matrix": os.path.join(work_dir, "majority_kSNPdist.matrix")},
+        "all":      {"report_path": os.path.join(work_dir, "all_kSNPdist.report"),
+                     "matrix_path": os.path.join(work_dir, "all_kSNPdist.matrix")},
+        "core":     {"report_path": os.path.join(work_dir, "core_kSNPdist.report"),
+                     "matrix_path": os.path.join(work_dir, "core_kSNPdist.matrix")},
+        "majority": {"report_path": os.path.join(work_dir, "majority_kSNPdist.report"),
+                     "matrix_path": os.path.join(work_dir, "majority_kSNPdist.matrix")},
     }
 
     any_file_found = any(
@@ -391,9 +391,18 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
         for p in subset.values()
     )
     if not any_file_found:
-        msg = "Distance matrix missing... cannot create heatmap"
+        msg = "kSNP4 distance matrices are not available; cannot create heatmap. Please review the genome lengths for any outlier genomes, or re-run this job from the Jobs page.\n"
         sys.stderr.write(msg)
-        return "", ""
+        heatmap_html = (
+            '<div style="display: flex; justify-content: center; margin: 16px 0;">'
+            '<div style="border: 2px solid #b00020; background-color: #fff0f0; color: #b00020; '
+            'padding: 16px 20px; border-radius: 6px; max-width: 700px; text-align: center;">'
+            '<strong>&#9888; kSNP4 distance matrices are not available.</strong> '
+            'Please review the genome lengths for any outlier genomes, or re-run this job from the Jobs page.'
+            '</div>'
+            '</div>'
+        )
+        return heatmap_html, ""
 
     def load_subset(report_path, matrix_path):
         ids_rep, mat_rep, ids_mat, mat_mat = "null", "null", "null", "null"
@@ -802,6 +811,12 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
 
             let {{ labels: genomeLabels, matrix: snpMatrix }} = getActiveMatrix();
 
+            if (genomeLabels.length === 0) {{
+                document.getElementById('heatmap').innerHTML =
+                    '<p style="color:#666; font-style:italic; padding:16px;">No distance data available for this SNP subset and data source combination.</p>';
+                return;
+            }}
+
             if (metaField) {{
                 const {{ newLabels, newMatrix }} = reorderByField(metaField, genomeLabels, snpMatrix);
                 genomeLabels = newLabels;
@@ -1182,10 +1197,19 @@ def ksnp4_filename_format(filename):
     return "{}{}".format(name, ext)
 
 
-def make_genome_bar_chart(data, report_data, majority_threshold):    
-    majority_snps_value = report_data["COUNT_coreSNPs"][0]["Number SNPs in at least a fraction {} of genomes".format(majority_threshold)]
-    core_snps_value = report_data["COUNT_coreSNPs"][0]["Number core SNPs"]
-    total_snps_value = report_data["COUNT_SNPs"][0]["Number_SNPs"]
+def make_genome_bar_chart(data, report_data, majority_threshold):
+    if "COUNT_coreSNPs" not in report_data or "COUNT_SNPs" not in report_data:
+        msg = "SNP count files not found; skipping SNP distribution chart.\n"
+        sys.stderr.write(msg)
+        return "<p>SNP distribution chart not available: SNP count data is missing.</p>"
+    try:
+        majority_snps_value = report_data["COUNT_coreSNPs"][0]["Number SNPs in at least a fraction {} of genomes".format(majority_threshold)]
+        core_snps_value = report_data["COUNT_coreSNPs"][0]["Number core SNPs"]
+        total_snps_value = report_data["COUNT_SNPs"][0]["Number_SNPs"]
+    except (KeyError, IndexError) as e:
+        msg = "SNP count data is incomplete ({}); skipping SNP distribution chart.\n".format(e)
+        sys.stderr.write(msg)
+        return "<p>SNP distribution chart not available: SNP count data is incomplete.</p>"
     
     categories = ["Total SNPs", "Majority SNPs", "Core_SNPs"] 
     values = [total_snps_value, majority_snps_value, core_snps_value]
@@ -1510,14 +1534,22 @@ def write_homoplastic_snp_table(report_data):
                 method = "Neighbor Joining"
             homoplastic_count = value[0]['Number_Homoplastic_SNPs']
             majority_snps_data.append({"Method": method, "Number_Homoplastic_SNPs": homoplastic_count})
-    # Convert to DataFrames
-    df_a = pd.DataFrame(all_snps_data).rename(columns={"Number_Homoplastic_SNPs": "All SNPs"})
-    df_c = pd.DataFrame(core_snps_data).rename(columns={"Number_Homoplastic_SNPs": "Core SNPs"})
-    merged_df = pd.merge(df_a, df_c, on="Method")
-    if len(majority_snps_data) != 0:
+    # Convert to DataFrames — skip any SNP set that produced no data
+    merged_df = None
+    if all_snps_data:
+        merged_df = pd.DataFrame(all_snps_data).rename(columns={"Number_Homoplastic_SNPs": "All SNPs"})
+    else:
+        sys.stderr.write("No All SNP homoplastic data found; skipping All SNPs column.\n")
+    if core_snps_data:
+        df_c = pd.DataFrame(core_snps_data).rename(columns={"Number_Homoplastic_SNPs": "Core SNPs"})
+        merged_df = pd.merge(merged_df, df_c, on="Method", how="outer") if merged_df is not None else df_c
+    else:
+        sys.stderr.write("No Core SNP homoplastic data found; skipping Core SNPs column.\n")
+    if majority_snps_data:
         df_m = pd.DataFrame(majority_snps_data).rename(columns={"Number_Homoplastic_SNPs": "Majority SNPs"})
-        # Merge on 'Method'
-        merged_df = pd.merge(merged_df, df_m, on="Method")
+        merged_df = pd.merge(merged_df, df_m, on="Method", how="outer") if merged_df is not None else df_m
+    if merged_df is None or merged_df.empty:
+        return "<p>No homoplastic SNP data available.</p>"
     homoplastic_snps_html = generate_table_html_2(merged_df, table_width='75%')
     return homoplastic_snps_html
 
