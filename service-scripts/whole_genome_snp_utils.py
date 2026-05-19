@@ -375,103 +375,231 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
         data = json.load(file)
     work_dir = data["work_data_dir"]
 
-    ### check for each SNP matrix ###
-    all_snps_report = os.path.join(work_dir, "all_kSNPdist.report")
-    core_snps_report = os.path.join(work_dir,"core_kSNPdist.report")
-    majority_snps_report = os.path.join(work_dir,"majority_kSNPdist.report")
-    if not (os.path.exists(all_snps_report) or os.path.exists(core_snps_report) or os.path.exists(majority_snps_report)):
-        msg = "Distance matrix missing... cannot create heatmap"
-        sys.stderr.write(msg)
-        heatmap_template = ""
-        metadata_json_string = ""
-        return heatmap_template, metadata_json_string
-    if os.path.exists(all_snps_report):
-        all_genome_ids, all_snpMatrix = read_ksnp_distance_report(all_snps_report)
-        clustered_labels, clustered_matrix = cluster_heatmap_data(all_genome_ids, all_snpMatrix)
-        all_genome_ids = json.dumps(clustered_labels)
-        all_snpMatrix = json.dumps(clustered_matrix)
-    
-    if os.path.exists(core_snps_report):
-        core_genome_ids, core_snpMatrix = read_ksnp_distance_report(core_snps_report)
-        clustered_labels, clustered_matrix = cluster_heatmap_data(core_genome_ids, core_snpMatrix)
-        core_genome_ids = json.dumps(clustered_labels)
-        core_snpMatrix = json.dumps(clustered_matrix)
+    # Paths for both data types for all three SNP subsets
+    file_paths = {
+        "all":      {"report_path": os.path.join(work_dir, "all_kSNPdist.report"),
+                     "matrix_path": os.path.join(work_dir, "all_kSNPdist.matrix")},
+        "core":     {"report_path": os.path.join(work_dir, "core_kSNPdist.report"),
+                     "matrix_path": os.path.join(work_dir, "core_kSNPdist.matrix")},
+        "majority": {"report_path": os.path.join(work_dir, "majority_kSNPdist.report"),
+                     "matrix_path": os.path.join(work_dir, "majority_kSNPdist.matrix")},
+    }
 
-    if os.path.exists(majority_snps_report):
-        majority_genome_ids, majority_snpMatrix = read_ksnp_distance_report(majority_snps_report)
-        clustered_labels, clustered_matrix = cluster_heatmap_data(majority_genome_ids, majority_snpMatrix)
-        majority_genome_ids = json.dumps(clustered_labels)
-        majority_snpMatrix = json.dumps(clustered_matrix)
+    any_file_found = any(
+        os.path.exists(p)
+        for subset in file_paths.values()
+        for p in subset.values()
+    )
+    if not any_file_found:
+        msg = "kSNP4 distance matrices are not available; cannot create heatmap. Please review the genome lengths for any outlier genomes, or re-run this job from the Jobs page.\n"
+        sys.stderr.write(msg)
+        heatmap_html = (
+            '<div style="display: flex; justify-content: center; margin: 16px 0;">'
+            '<div style="border: 2px solid #b00020; background-color: #fff0f0; color: #b00020; '
+            'padding: 16px 20px; border-radius: 6px; max-width: 700px; text-align: center;">'
+            '<strong>&#9888; kSNP4 distance matrices are not available.</strong> '
+            'Please review the genome lengths for any outlier genomes, or re-run this job from the Jobs page.'
+            '</div>'
+            '</div>'
+        )
+        return heatmap_html, ""
+
+    def load_subset(report_path, matrix_path):
+        ids_rep, mat_rep, ids_mat, mat_mat = "null", "null", "null", "null"
+        if os.path.exists(report_path):
+            gids, mat = read_ksnp_distance_report(report_path)
+            cl, cm = cluster_heatmap_data(gids, mat)
+            ids_rep = json.dumps(cl)
+            mat_rep = json.dumps(cm)
+        if os.path.exists(matrix_path):
+            gids, mat = read_ksnp_distance_matrix(matrix_path)
+            cl, cm = cluster_heatmap_data(gids, mat)
+            ids_mat = json.dumps(cl)
+            mat_mat = json.dumps(cm)
+        return ids_rep, mat_rep, ids_mat, mat_mat
+
+    all_ids_rep,      all_mat_rep,      all_ids_mat,      all_mat_mat      = load_subset(**file_paths["all"])
+    core_ids_rep,     core_mat_rep,     core_ids_mat,     core_mat_mat     = load_subset(**file_paths["core"])
+    majority_ids_rep, majority_mat_rep, majority_ids_mat, majority_mat_mat = load_subset(**file_paths["majority"])
     # format the metadata into a string for the report
     metadata_json_string, metadata_df = create_metadata_table(metadata_json, "metadata.tsv")
     heatmap_template = """
-    <!-- Plotly.js v3.0.1  — last updated June 2025 --> 
+    <!-- Plotly.js v3.0.1  — last updated June 2025 -->
     <script src="https://cdn.plot.ly/plotly-3.0.1.min.js"></script>
-     <h3>SNP Distance Heatmap and Metadata</h3>
-     <p>The SNP Distance Heatmap visualizes pairwise single nucleotide polymorphism (SNP) differences between genomes. Each cell in the heatmap represents the SNP distance - how many SNPs differ - between two genomes, highlighting genetic similarity or divergence across a dataset. Lower distances (fewer differences) typically indicate closer genetic relationships.
-     Hover over any cell to view the genome IDs and SNP distance. <strong>Click any cell</strong> to compare metadata for that pair in the panel below. <p>
-         <div class="heatmap-controls">
-     <h4>Filter and Sort the Data:</h4>
-        <label>Choose SNP Subset:
-        <select id="matrixSelector" onchange="recolorHeatmap(); updateSVG();">
-            <option value="1">All SNPs</option>
-            <option value="2">Core SNPs</option>
-            <option value="3">Majority SNPs</option>
+    <h3>SNP Distance Heatmap and Metadata</h3>
+    <p>The kSNPdist tool measures genetic differences between genomes by comparing single nucleotide
+    polymorphisms (SNPs), which are small variations in DNA sequence. It calculates how similar or different
+    each pair of genomes is based only on SNP positions shared between both genomes, while ignoring missing
+    data. The analysis produces two outputs: a matrix summarizing the genetic distances between all genomes
+    in the dataset, and a report listing the number of SNP differences observed for every genome pair.
+    Choose your view according to your goal:</p>
+    <ul>
+      <li><strong>Distance matrix (kSNPdist.matrix):</strong> Best for getting a broad overview of how
+      closely related genomes are across an entire dataset. Because the results are organized in a matrix
+      format, they are useful for clustering analyses, heatmaps, phylogenetic studies, and identifying
+      groups of similar strains quickly.</li>
+      <li><strong>Pairwise SNP report (kSNPdist.report):</strong> Best when you need the exact number of
+      SNP differences between specific genome pairs. This format is easier for detailed comparisons,
+      outbreak investigations, validation work, or reporting precise genomic distances between selected
+      samples.</li>
+    </ul>
+    <p>Use the <strong>Data Source</strong> selector to toggle between views. The Heatmap, Close Genome
+    Pairs, and Distance Matrix Table will all update to reflect the selected data source and SNP subset.</p>
+
+    <!-- SNP subset + data source selectors — apply to all tabs -->
+    <div style="display:flex; flex-wrap:wrap; gap:24px; align-items:center; margin-bottom:12px;">
+      <label>Choose SNP Subset:
+        <select id="matrixSelector" onchange="onMatrixChange()">
+          <option value="1">All SNPs</option>
+          <option value="2">Core SNPs</option>
+          <option value="3">Majority SNPs</option>
         </select>
-        </label>
+      </label>
+      <label>Data Source:
+        <select id="dataSourceSelector" onchange="onMatrixChange()">
+          <option value="report">Pairwise SNP report (kSNPdist.report)</option>
+          <option value="matrix">Distance matrix (kSNPdist.matrix)</option>
+        </select>
+      </label>
+    </div>
+
+    <!-- Single distance threshold — drives Close Genome Pairs and Distance Matrix Table -->
+    <div style="display:flex; flex-wrap:wrap; gap:16px; align-items:center; margin-bottom:12px;">
+      <label style="font-weight:bold;">Distance threshold (Close Pairs / Distance Table):
+        <input type="number" id="linkageThreshold" min="0" style="width:70px; margin-left:6px;">
+      </label>
+    </div>
+
+    <!-- Tab buttons -->
+    <div style="display:flex; gap:0; margin-bottom:16px; border-bottom:2px solid #ccc;">
+      <button id="tabHeatmap" onclick="switchView('heatmap')"
+        style="padding:8px 20px; cursor:pointer; border:1px solid #ccc; border-bottom:none;
+               background:#fff; font-size:14px; font-weight:bold; border-radius:4px 4px 0 0;
+               margin-bottom:-2px; border-bottom:2px solid #fff;">
+        Heatmap
+      </button>
+      <button id="tabClosePairs" onclick="switchView('closePairs')"
+        style="padding:8px 20px; cursor:pointer; border:1px solid #ccc; border-bottom:none;
+               background:#f5f5f5; font-size:14px; color:#555; border-radius:4px 4px 0 0;
+               margin-bottom:-2px;">
+        Close Genome Pairs
+      </button>
+      <button id="tabDistTable" onclick="switchView('distTable')"
+        style="padding:8px 20px; cursor:pointer; border:1px solid #ccc; border-bottom:none;
+               background:#f5f5f5; font-size:14px; color:#555; border-radius:4px 4px 0 0;
+               margin-bottom:-2px;">
+        Distance Matrix Table
+      </button>
+    </div>
+
+    <!-- ====================== HEATMAP VIEW ====================== -->
+    <div id="heatmapViewSection">
+      <div class="heatmap-controls">
+        <h4>Filter and Sort the Data:</h4>
         <label>Reorder Heatmap:
-        <select id="metadataFieldSelect" onchange="recolorHeatmap()">
+          <select id="metadataFieldSelect" onchange="recolorHeatmap()">
             <!-- options populated dynamically -->
-        </select>
+          </select>
         </label>
-        </div>
-        <div class="linkage-controls" style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+      </div>
+      <div class="linkage-controls" style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
         <h4>Recolor Heatmap According to Linkage Thresholds:</h4>
         <label>Strong Linkage Thresholds:
-        <input type="number" id="t0" value="0" disabled style="width: 40px;">
-        <input type="number" id="t1a" value="10" style="width: 40px;">
+          <input type="number" id="t0" value="0" disabled style="width:40px;">
+          <input type="number" id="t1a" value="10" style="width:40px;">
         </label>
-
         <label>Mid Linkage Thresholds:
-        <input type="number" id="t1b" value="10" style="width: 40px;">
-        <input type="number" id="t2a" value="40" style="width: 40px;">
+          <input type="number" id="t1b" value="10" style="width:40px;">
+          <input type="number" id="t2a" value="40" style="width:40px;">
         </label>
-
         <label>Weak Linkage Thresholds:
-        <input type="number" id="t2b" value="40" style="width: 40px;">
-        <input type="number" id="t3" placeholder="Max" disabled style="width: 40px;">
+          <input type="number" id="t2b" value="40" style="width:40px;">
+          <input type="number" id="t3" placeholder="Max" disabled style="width:40px;">
         </label>
-
-        <button style="padding: 8px 8px; font-size: 14px;" onclick="recolorHeatmap()">Recolor</button>
-        </div>
-    </div>
-    <div id="heatmap" style="width:100%;"></div>
-
-    <!-- Genome comparison panel (appears on cell click) -->
-    <div id="comparisonPanel" style="display:none; margin-top:18px; border:1px solid #ccc;
-         border-radius:6px; padding:16px; background:#fafafa;">
-      <h3 id="comparisonTitle" style="margin-top:0;"></h3>
-      <div style="display:flex; gap:24px; flex-wrap:wrap;">
-        <div style="flex:1; min-width:220px;">
-          <h4 id="genome1Label" style="margin-bottom:6px;"></h4>
-          <table id="meta1Table" style="width:100%; border-collapse:collapse;"></table>
-        </div>
-        <div style="flex:1; min-width:220px;">
-          <h4 id="genome2Label" style="margin-bottom:6px;"></h4>
-          <table id="meta2Table" style="width:100%; border-collapse:collapse;"></table>
+        <button style="padding:8px 8px; font-size:14px;" onclick="applyThresholdColoring()">Recolor</button>
+      </div>
+      <div id="heatmap" style="width:100%;"></div>
+      <!-- Genome comparison panel (appears on cell click) -->
+      <div id="comparisonPanel" style="display:none; margin-top:18px; border:1px solid #ccc;
+           border-radius:6px; padding:16px; background:#fafafa;">
+        <h3 id="comparisonTitle" style="margin-top:0;"></h3>
+        <div style="display:flex; gap:24px; flex-wrap:wrap;">
+          <div style="flex:1; min-width:220px;">
+            <h4 id="genome1Label" style="margin-bottom:6px;"></h4>
+            <table id="meta1Table" style="width:100%; border-collapse:collapse;"></table>
+          </div>
+          <div style="flex:1; min-width:220px;">
+            <h4 id="genome2Label" style="margin-bottom:6px;"></h4>
+            <table id="meta2Table" style="width:100%; border-collapse:collapse;"></table>
+          </div>
         </div>
       </div>
-    </div>
+    </div><!-- end heatmapViewSection -->
 
-    <!-- ============================================================ -->
-    <!-- PHYLOGENETIC TREES                                            -->
-    <!-- ============================================================ -->
+    <!-- ====================== CLOSE GENOME PAIRS ====================== -->
+    <div id="closePairsViewSection" style="display:none;">
+      <h3>Close Genome Pairs</h3>
+      <p>This view lists each unique genome pair sorted by SNP distance, making it easy to identify
+      the most closely related samples. Only the upper triangle of the distance matrix is shown (each
+      pair appears once). Refine results by changing the distance threshold above. Click any column
+      header to sort.</p>
+      <div style="margin-bottom:12px;">
+        <span id="cpCount" style="color:#555; font-size:13px;"></span>
+      </div>
+      <div style="overflow:auto; max-height:400px; border:1px solid #ccc; border-radius:4px;">
+        <table id="cpTable" style="border-collapse:collapse; width:100%;">
+          <thead>
+            <tr style="position:sticky; top:0; background:#f0f0f0; z-index:2;">
+              <th onclick="sortClosePairs('g1')"
+                  style="padding:6px 12px; border:1px solid #ddd; cursor:pointer; user-select:none;">
+                Genome A <span id="cpSort_g1"></span></th>
+              <th onclick="sortClosePairs('g2')"
+                  style="padding:6px 12px; border:1px solid #ddd; cursor:pointer; user-select:none;">
+                Genome B <span id="cpSort_g2"></span></th>
+              <th onclick="sortClosePairs('dist')"
+                  style="padding:6px 12px; border:1px solid #ddd; cursor:pointer; user-select:none;">
+                SNP Distance <span id="cpSort_dist">&#9650;</span></th>
+            </tr>
+          </thead>
+          <tbody id="cpBody"></tbody>
+        </table>
+      </div>
+    </div><!-- end closePairsViewSection -->
+
+    <!-- ====================== DISTANCE MATRIX TABLE ====================== -->
+    <div id="distanceTableViewSection" style="display:none;">
+      <h3>Distance Matrix Table</h3>
+      <p>The table below presents the full pairwise SNP distance matrix in a searchable, color-coded
+      format. Each cell shows the SNP distance between two genomes. Use the <strong>search box</strong>
+      to filter rows by genome ID, or set a distance threshold above to highlight cells at or below
+      that value.</p>
+      <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-bottom:10px;">
+        <label style="display:flex; align-items:center; gap:6px;">
+          Search genome ID:
+          <input type="text" id="dmSearch" placeholder="Filter rows by ID..."
+                 style="padding:4px 8px; width:200px; font-size:13px;"
+                 oninput="buildDistTable()">
+        </label>
+        <span id="dmRowCount" style="color:#555; font-size:13px;"></span>
+      </div>
+      <div style="display:flex; gap:16px; align-items:center; margin-bottom:10px; font-size:12px; flex-wrap:wrap;">
+        <strong>Color key:</strong>
+        <span id="dmKeyIdentical" style="background:#2ca02c; color:white; padding:2px 8px; border-radius:3px;">Identical (0)</span>
+        <span id="dmKeyMatching" style="background:#a8d5a2; color:#333; padding:2px 8px; border-radius:3px;">Matching threshold</span>
+        <span id="dmKeyAbove"    style="background:#f4a460; color:#333; padding:2px 8px; border-radius:3px;">Above threshold</span>
+      </div>
+      <div id="dmTableWrapper"
+           style="overflow:auto; max-height:600px; border:1px solid #ccc; border-radius:4px;">
+        <table id="dmTable" style="border-collapse:collapse; white-space:nowrap;"></table>
+      </div>
+    </div><!-- end distanceTableViewSection -->
+
+    <!-- ====================== PHYLOGENETIC TREES ====================== -->
     <h3 style="margin-top:32px;">Phylogenetic Trees</h3>
     <p>View a static image of the trees according to each SNP subset and each tree building method.
-    An interactive view of the tree annotated with metadata is available in the job results in the
-    directory labeled "Trees". The website offers an interactive view of the trees with the ability
-    to map metadata directly on the tree through the phylogenetic tree viewer. This is accessible
-    by visiting the files ending with ".tre" or ".phyloxml" in your job results directory.</p>
+    An interactive view annotated with metadata is available in the job results in the directory
+    labeled "Trees". Access the interactive tree viewer via files ending with ".tre" or ".phyloxml"
+    in your job results directory.</p>
     <div style="display:flex; flex-wrap:wrap; gap:16px; align-items:center; margin-bottom:12px;">
       <label>Choose SNP Subset:
         <select id="treeSNPSelector" onchange="updateSVG()">
@@ -491,259 +619,445 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
     <div id="svgContainer"></div>
 
     <script>
-        // ===== Embedded data placeholders =====
-        const genomeLabels1 = {all_genome_ids};
-        const snpMatrix1     = {all_snpMatrix};
-        const genomeLabels2 = {core_genome_ids};
-        const snpMatrix2     = {core_snpMatrix};
-        const genomeLabels3 = {majority_genome_ids};
-        const snpMatrix3     = {majority_snpMatrix};
+        // ===== Embedded data =====
+        // Pairwise SNP report (kSNPdist.report) — raw integer SNP counts
+        const labelsAll_rep      = {all_ids_rep};
+        const matrixAll_rep      = {all_mat_rep};
+        const labelsCore_rep     = {core_ids_rep};
+        const matrixCore_rep     = {core_mat_rep};
+        const labelsMaj_rep      = {majority_ids_rep};
+        const matrixMaj_rep      = {majority_mat_rep};
+        // Distance matrix (kSNPdist.matrix) — proportional float distances
+        const labelsAll_mat      = {all_ids_mat};
+        const matrixAll_mat      = {all_mat_mat};
+        const labelsCore_mat     = {core_ids_mat};
+        const matrixCore_mat     = {core_mat_mat};
+        const labelsMaj_mat      = {majority_ids_mat};
+        const matrixMaj_mat      = {majority_mat_mat};
+
         const metadata      = {metadata_json_string};
 
-        // Build lookup once: genome_id → metadata object
         const idToMeta = {{}};
         metadata.forEach(obj => {{ idToMeta[obj.genome_id] = obj; }});
 
-        // Track current display state for click handler
         let currentLabels = [];
         let currentMatrix = [];
+        // 'viridis' on initial load; 'threshold' after Recolor is clicked
+        let heatmapColorMode = 'viridis';
 
-        // ===== Map linkage thresholds =====
+        // ===== Return the active matrix based on SNP subset + data source selectors =====
+        function getActiveMatrix() {{
+            const subset = document.getElementById('matrixSelector').value;
+            const src    = document.getElementById('dataSourceSelector').value;
+            const sets = {{
+                "1": {{ report: {{ labels: labelsAll_rep,  matrix: matrixAll_rep  }},
+                        matrix: {{ labels: labelsAll_mat,  matrix: matrixAll_mat  }} }},
+                "2": {{ report: {{ labels: labelsCore_rep, matrix: matrixCore_rep }},
+                        matrix: {{ labels: labelsCore_mat, matrix: matrixCore_mat }} }},
+                "3": {{ report: {{ labels: labelsMaj_rep,  matrix: matrixMaj_rep  }},
+                        matrix: {{ labels: labelsMaj_mat,  matrix: matrixMaj_mat  }} }},
+            }};
+            const chosen = sets[subset][src];
+            if (!chosen || !chosen.labels) {{
+                return {{ labels: [], matrix: [] }};
+            }}
+            return {{ labels: chosen.labels.slice(), matrix: chosen.matrix.map(r => r.slice()) }};
+        }}
+
+        // ===== SNP subset change — refresh all visible views =====
+        function onMatrixChange() {{
+            recolorHeatmap();
+            updateSVG();
+            const cpSec = document.getElementById('closePairsViewSection');
+            if (cpSec && cpSec.style.display !== 'none') buildClosePairs();
+            const dtSec = document.getElementById('distanceTableViewSection');
+            if (dtSec && dtSec.style.display !== 'none') buildDistTable();
+        }}
+
+        // ===== Sync paired threshold inputs (validate only; no auto-recolor) =====
         function syncThresholdInputs() {{
             const t1a = document.getElementById('t1a');
             const t1b = document.getElementById('t1b');
             const t2a = document.getElementById('t2a');
             const t2b = document.getElementById('t2b');
 
-            // make sure T1 ≤ T2
             function validateThresholds() {{
                 const t1 = parseFloat(t1a.value);
                 const t2 = parseFloat(t2a.value);
-                console.log(t1);
-                console.log(t2);
-
                 if (t1 > t2) {{
-                    alert("Weak threshold (T1) must be less than or equal to Mid threshold (T2). Resetting T1 to match T2.");
+                    alert("Strong threshold must be ≤ Mid threshold. Resetting.");
                     t1a.value = t2;
                     t1b.value = t2;
                 }}
-                recolorHeatmap();
             }}
 
-            t1a.addEventListener('input', () => {{
-                t1b.value = t1a.value;
-                validateThresholds();
-            }});
-
-            t1b.addEventListener('input', () => {{
-                t1a.value = t1b.value;
-                validateThresholds();
-            }});
-
-            t2a.addEventListener('input', () => {{
-                t2b.value = t2a.value;
-                validateThresholds();
-            }});
-
-            t2b.addEventListener('input', () => {{
-                t2a.value = t2b.value;
-                validateThresholds();
-            }});
+            t1a.addEventListener('input', () => {{ t1b.value = t1a.value; validateThresholds(); }});
+            t1b.addEventListener('input', () => {{ t1a.value = t1b.value; validateThresholds(); }});
+            t2a.addEventListener('input', () => {{ t2b.value = t2a.value; validateThresholds(); }});
+            t2b.addEventListener('input', () => {{ t2a.value = t2b.value; validateThresholds(); }});
         }}
-            
-        document.addEventListener('DOMContentLoaded', syncThresholdInputs);    
 
-        // ===== Build dropdown for metadata fields =====
-        (function populateMetadataFields() {{
-        const select = document.getElementById('metadataFieldSelect');
-        // Use all keys except "id" (if present)
-        const allKeys = Object.keys(metadata[0]).filter(k => k !== "id");
-        // Add a default empty option
-        const defaultOption = document.createElement('option');
-        defaultOption.value = "";
-        defaultOption.textContent = "Hierarchical Clustering";
-        select.appendChild(defaultOption);
-        allKeys.forEach(field => {{
-            const opt = document.createElement('option');
-            opt.value = field;
-            opt.textContent = field;
-            select.appendChild(opt);
+        document.addEventListener('DOMContentLoaded', function () {{
+            syncThresholdInputs();
+            const ltEl = document.getElementById('linkageThreshold');
+            if (ltEl) ltEl.addEventListener('input', function () {{
+                buildClosePairs();
+                buildDistTable();
+            }});
         }});
+
+        // ===== Populate metadata reorder dropdown =====
+        (function populateMetadataFields() {{
+            const select = document.getElementById('metadataFieldSelect');
+            const allKeys = Object.keys(metadata[0]).filter(k => k !== "id");
+            const defaultOption = document.createElement('option');
+            defaultOption.value = "";
+            defaultOption.textContent = "Hierarchical Clustering";
+            select.appendChild(defaultOption);
+            allKeys.forEach(field => {{
+                const opt = document.createElement('option');
+                opt.value = field;
+                opt.textContent = field;
+                select.appendChild(opt);
+            }});
         }})();
 
-        // ===== Binning logic for coloring =====
+        // ===== Binning helpers for threshold coloring =====
         function assignBin(val, t1, t2, maxVal) {{
-        if (val === 0)    return 0; // Zero
-        if (val < t1)    return 1; // Low
-        if (val < t2)    return 2; // Medium
-        if (val < maxVal) return 3; // High
-        return 4;                  // Max
+            if (val === 0)     return 0;
+            if (val < t1)     return 1;
+            if (val < t2)     return 2;
+            if (val < maxVal) return 3;
+            return 4;
         }}
 
         function getColorScale() {{
-        return [
-            [0.0, '#440154'],
-            [0.25, '#3b528b'],
-            [0.5, '#21918c'],
-            [0.75, '#5ec962'],
-            [1.0, '#fde725']
-        ];
+            return [
+                [0.0,  '#440154'],
+                [0.25, '#3b528b'],
+                [0.5,  '#21918c'],
+                [0.75, '#5ec962'],
+                [1.0,  '#fde725']
+            ];
         }}
 
-        // ===== Reordering by metadata field =====
+        // ===== Reorder matrix by metadata field =====
         function reorderByField(fieldName, labelsArr, matrixArr) {{
-        // Build an array of {{ id, value }} using genome_id and chosen field
-        const arr = metadata.map(obj => {{
-            return {{
-            id: obj.genome_id,
-            value: obj[fieldName]
-            }};
-        }});
-
-        // Sort by metadata value; tie‐break by genome_id
-        arr.sort((a, b) => {{
-            if (a.value < b.value) return -1;
-            if (a.value > b.value) return 1;
-            if (a.id < b.id) return -1;
-            if (a.id > b.id) return 1;
-            return 0;
-        }});
-
-        const newLabels = arr.map(o => o.id);
-        const indexMap = {{}};
-        labelsArr.forEach((lbl, idx) => {{ indexMap[lbl] = idx; }});
-        const n = labelsArr.length;
-        const newMatrix = [];
-
-        for (let i = 0; i < n; i++) {{
-            const rowLabel = newLabels[i];
-            const origRowIdx = indexMap[rowLabel];
-            const newRow = [];
-            for (let j = 0; j < n; j++) {{
-            const colLabel = newLabels[j];
-            const origColIdx = indexMap[colLabel];
-            newRow.push(matrixArr[origRowIdx][origColIdx]);
+            const arr = metadata.map(obj => ({{ id: obj.genome_id, value: obj[fieldName] }}));
+            arr.sort((a, b) => {{
+                if (a.value < b.value) return -1;
+                if (a.value > b.value) return 1;
+                if (a.id < b.id) return -1;
+                if (a.id > b.id) return 1;
+                return 0;
+            }});
+            const newLabels = arr.map(o => o.id);
+            const indexMap = {{}};
+            labelsArr.forEach((lbl, idx) => {{ indexMap[lbl] = idx; }});
+            const n = labelsArr.length;
+            const newMatrix = [];
+            for (let i = 0; i < n; i++) {{
+                const origRow = indexMap[newLabels[i]];
+                const row = [];
+                for (let j = 0; j < n; j++) row.push(matrixArr[origRow][indexMap[newLabels[j]]]);
+                newMatrix.push(row);
             }}
-            newMatrix.push(newRow);
+            return {{ newLabels, newMatrix }};
         }}
 
-        return {{ newLabels, newMatrix }};
-        }}
-
-        // ===== Render a metadata table into a <table> element =====
+        // ===== Render metadata key/value table =====
         function renderMetaTable(tableEl, metaObj) {{
-          tableEl.innerHTML = '';
-          for (const [field, val] of Object.entries(metaObj)) {{
-            const tr  = document.createElement('tr');
-            const tdK = document.createElement('td');
-            const tdV = document.createElement('td');
-            tdK.style.cssText = 'padding:4px 8px 4px 0; font-weight:bold; white-space:nowrap; vertical-align:top;';
-            tdV.style.cssText = 'padding:4px 0; vertical-align:top;';
-            tdK.textContent = field;
-            tdV.textContent = val;
-            tr.appendChild(tdK);
-            tr.appendChild(tdV);
-            tableEl.appendChild(tr);
-          }}
-        }}
-
-        // ===== Handle heatmap cell click → show comparison panel =====
-        function onHeatmapClick(eventData) {{
-          if (!eventData || !eventData.points || eventData.points.length === 0) return;
-          const pt  = eventData.points[0];
-          const id1 = pt.y;
-          const id2 = pt.x;
-          const i1  = currentLabels.indexOf(id1);
-          const i2  = currentLabels.indexOf(id2);
-          const dist = (i1 >= 0 && i2 >= 0) ? currentMatrix[i1][i2] : '';
-
-          const meta1 = idToMeta[id1] || {{ genome_id: id1 }};
-          const meta2 = idToMeta[id2] || {{ genome_id: id2 }};
-
-          document.getElementById('comparisonTitle').textContent = `SNP Distance: ${{dist}}`;
-          document.getElementById('genome1Label').innerHTML = `<a href="https://www.bv-brc.org/view/Genome/${{id1}}" target="_blank">${{id1}}</a>`;
-          document.getElementById('genome2Label').innerHTML = `<a href="https://www.bv-brc.org/view/Genome/${{id2}}" target="_blank">${{id2}}</a>`;
-
-          renderMetaTable(document.getElementById('meta1Table'), meta1);
-          renderMetaTable(document.getElementById('meta2Table'), meta2);
-
-          const panel = document.getElementById('comparisonPanel');
-          panel.style.display = 'block';
-          panel.scrollIntoView({{ behavior: 'smooth', block: 'nearest' }});
-        }}
-
-        // ===== Main function to draw/update heatmap =====
-        function recolorHeatmap() {{
-        const t1 = parseInt(document.getElementById('t1a').value);
-        const t2 = parseInt(document.getElementById('t2a').value);
-        const selected = document.getElementById('matrixSelector').value;
-        const metaField = document.getElementById('metadataFieldSelect').value;
-
-        let genomeLabels, snpMatrix;
-
-        if (selected === "1") {{
-            genomeLabels = genomeLabels1.slice();
-            snpMatrix = snpMatrix1.map(row => row.slice());
-        }} else if (selected === "2") {{
-            genomeLabels = genomeLabels2.slice();
-            snpMatrix = snpMatrix2.map(row => row.slice());
-        }} else {{
-            genomeLabels = genomeLabels3.slice();
-            snpMatrix = snpMatrix3.map(row => row.slice());
-        }}
-
-        // Reorder by metadata if a field is chosen
-        if (metaField) {{
-            const {{ newLabels, newMatrix }} = reorderByField(metaField, genomeLabels, snpMatrix);
-            genomeLabels = newLabels;
-            snpMatrix = newMatrix;
-        }}
-
-        // Compute bins for coloring
-        const maxVal = Math.max(...snpMatrix.flat());
-        const bins = snpMatrix.map(row =>
-            row.map(val => assignBin(val, t1, t2, maxVal))
-        );
-
-        // Build hoverText: genome ids, SNP distance, click prompt
-        const hoverText = snpMatrix.map((row, i) =>
-            row.map((val, j) => {{
-            const id1 = genomeLabels[i];
-            const id2 = genomeLabels[j];
-            return `${{id1}} vs ${{id2}}<br>SNP Distance: ${{val}}<br><i>Click to show metadata</i>`;
-            }})
-        );
-
-        // Define heatmap trace
-        const data = [{{
-            z: bins,
-            x: genomeLabels,
-            y: genomeLabels,
-            type: 'heatmap',
-            colorscale: getColorScale(),
-            zmin: 0,
-            zmax: 4,
-            text: hoverText,
-            hoverinfo: 'text',
-            colorbar: {{
-            tickvals: [0, 1, 2, 3, 4],
-            ticktext: ['Zero', 'Strong', 'Mid', 'Weak', 'Max Value'],
-            title: 'Linkage Strength'
+            tableEl.innerHTML = '';
+            for (const [field, val] of Object.entries(metaObj)) {{
+                const tr  = document.createElement('tr');
+                const tdK = document.createElement('td');
+                const tdV = document.createElement('td');
+                tdK.style.cssText = 'padding:4px 8px 4px 0; font-weight:bold; white-space:nowrap; vertical-align:top;';
+                tdV.style.cssText = 'padding:4px 0; vertical-align:top;';
+                tdK.textContent = field;
+                tdV.textContent = val;
+                tr.appendChild(tdK);
+                tr.appendChild(tdV);
+                tableEl.appendChild(tr);
             }}
-        }}];
+        }}
 
-        // Layout with dynamic title
-        const layout = {{
-            title: `SNP Heatmap (Thresholds: ${{t1}}, ${{t2}})` +
-                (metaField ? ` – Reordered by “${{metaField}}”` : ""),
-            xaxis: {{ type: 'category', tickangle: 45 }},
-            yaxis: {{ type: 'category', tickangle: 45 }}
-        }};
+        // ===== Heatmap cell click → comparison panel =====
+        function onHeatmapClick(eventData) {{
+            if (!eventData || !eventData.points || eventData.points.length === 0) return;
+            const pt   = eventData.points[0];
+            const id1  = pt.y;
+            const id2  = pt.x;
+            const i1   = currentLabels.indexOf(id1);
+            const i2   = currentLabels.indexOf(id2);
+            const dist = (i1 >= 0 && i2 >= 0) ? currentMatrix[i1][i2] : '';
+            const meta1 = idToMeta[id1] || {{ genome_id: id1 }};
+            const meta2 = idToMeta[id2] || {{ genome_id: id2 }};
+            document.getElementById('comparisonTitle').textContent = `SNP Distance: ${{dist}}`;
+            document.getElementById('genome1Label').innerHTML = `<a href="https://www.bv-brc.org/view/Genome/${{id1}}" target="_blank">${{id1}}</a>`;
+            document.getElementById('genome2Label').innerHTML = `<a href="https://www.bv-brc.org/view/Genome/${{id2}}" target="_blank">${{id2}}</a>`;
+            renderMetaTable(document.getElementById('meta1Table'), meta1);
+            renderMetaTable(document.getElementById('meta2Table'), meta2);
+            const panel = document.getElementById('comparisonPanel');
+            panel.style.display = 'block';
+            panel.scrollIntoView({{ behavior: 'smooth', block: 'nearest' }});
+        }}
 
-        currentLabels = genomeLabels;
-        currentMatrix = snpMatrix;
-        Plotly.newPlot('heatmap', data, layout);
-        document.getElementById('heatmap').on('plotly_click', onHeatmapClick);
+        // ===== Draw / redraw heatmap =====
+        function recolorHeatmap() {{
+            const t1 = parseInt(document.getElementById('t1a').value);
+            const t2 = parseInt(document.getElementById('t2a').value);
+            const metaField = document.getElementById('metadataFieldSelect').value;
+
+            let {{ labels: genomeLabels, matrix: snpMatrix }} = getActiveMatrix();
+
+            if (genomeLabels.length === 0) {{
+                document.getElementById('heatmap').innerHTML =
+                    '<p style="color:#666; font-style:italic; padding:16px;">No distance data available for this SNP subset and data source combination.</p>';
+                return;
+            }}
+
+            if (metaField) {{
+                const {{ newLabels, newMatrix }} = reorderByField(metaField, genomeLabels, snpMatrix);
+                genomeLabels = newLabels;
+                snpMatrix = newMatrix;
+            }}
+
+            currentLabels = genomeLabels;
+            currentMatrix = snpMatrix;
+
+            const hoverText = snpMatrix.map((row, i) =>
+                row.map((val, j) => `${{genomeLabels[i]}} vs ${{genomeLabels[j]}}<br>SNP Distance: ${{val}}<br><i>Click to show metadata</i>`)
+            );
+
+            let zData, colorscale, colorbarConfig, extraRange;
+            if (heatmapColorMode === 'threshold') {{
+                const maxVal = Math.max(...snpMatrix.flat());
+                zData        = snpMatrix.map(row => row.map(val => assignBin(val, t1, t2, maxVal)));
+                colorscale   = getColorScale();
+                extraRange   = {{ zmin: 0, zmax: 4 }};
+                colorbarConfig = {{
+                    tickvals: [0, 1, 2, 3, 4],
+                    ticktext: ['Zero', 'Strong', 'Mid', 'Weak', 'Max Value'],
+                    title: 'Linkage Strength'
+                }};
+            }} else {{
+                zData        = snpMatrix;
+                colorscale   = 'Viridis';
+                extraRange   = {{}};
+                colorbarConfig = {{ title: 'SNP Distance' }};
+            }}
+
+            const titleStr = heatmapColorMode === 'threshold'
+                ? `SNP Heatmap (Thresholds: ${{t1}}, ${{t2}})` + (metaField ? ` – Reordered by "${{metaField}}"` : '')
+                : 'SNP Distance Heatmap'                        + (metaField ? ` – Reordered by "${{metaField}}"` : '');
+
+            const traceData = [Object.assign({{
+                z: zData, x: genomeLabels, y: genomeLabels,
+                type: 'heatmap', colorscale: colorscale,
+                text: hoverText, hoverinfo: 'text', colorbar: colorbarConfig
+            }}, extraRange)];
+
+            const layout = {{
+                title: titleStr,
+                xaxis: {{ type: 'category', tickangle: 45 }},
+                yaxis: {{ type: 'category', tickangle: 45 }}
+            }};
+
+            Plotly.newPlot('heatmap', traceData, layout);
+            document.getElementById('heatmap').on('plotly_click', onHeatmapClick);
+        }}
+
+        // ===== Switch to threshold coloring (Recolor button) =====
+        function applyThresholdColoring() {{
+            heatmapColorMode = 'threshold';
+            recolorHeatmap();
+        }}
+
+        // ===== Tab switching =====
+        function switchView(view) {{
+            const sections = {{
+                heatmap:    document.getElementById('heatmapViewSection'),
+                closePairs: document.getElementById('closePairsViewSection'),
+                distTable:  document.getElementById('distanceTableViewSection'),
+            }};
+            const tabs = {{
+                heatmap:    document.getElementById('tabHeatmap'),
+                closePairs: document.getElementById('tabClosePairs'),
+                distTable:  document.getElementById('tabDistTable'),
+            }};
+            Object.keys(sections).forEach(k => {{ if (sections[k]) sections[k].style.display = 'none'; }});
+            Object.keys(tabs).forEach(k => {{
+                if (tabs[k]) {{
+                    tabs[k].style.background   = '#f5f5f5';
+                    tabs[k].style.color        = '#555';
+                    tabs[k].style.borderBottom = '';
+                    tabs[k].style.fontWeight   = '';
+                }}
+            }});
+            if (sections[view]) sections[view].style.display = '';
+            if (tabs[view]) {{
+                tabs[view].style.background   = '#fff';
+                tabs[view].style.color        = '';
+                tabs[view].style.borderBottom = '2px solid #fff';
+                tabs[view].style.fontWeight   = 'bold';
+            }}
+            if (view === 'closePairs') buildClosePairs();
+            if (view === 'distTable')  buildDistTable();
+        }}
+
+        // ===== Shared color helper for Close Pairs and Distance Matrix =====
+        function getDmColor(val, t) {{
+            if (val === 0) return {{ bg: '#2ca02c', fg: 'white' }};
+            if (t !== null && val <= t) return {{ bg: '#a8d5a2', fg: '#333' }};
+            return {{ bg: t !== null ? '#f4a460' : '#ffffff', fg: '#333' }};
+        }}
+
+        function getDmThreshold() {{
+            const el  = document.getElementById('linkageThreshold');
+            const raw = el ? el.value.trim() : '';
+            return raw !== '' ? parseInt(raw) : null;
+        }}
+
+        // ===== Close Genome Pairs =====
+        let _cpPairs     = [];
+        let _cpSortField = 'dist';
+        let _cpSortAsc   = true;
+
+        function buildClosePairs() {{
+            const t = getDmThreshold();
+            const {{ labels, matrix }} = getActiveMatrix();
+            const n = labels.length;
+            _cpPairs = [];
+            for (let i = 0; i < n; i++) {{
+                for (let j = i + 1; j < n; j++) {{
+                    const d = matrix[i][j];
+                    if (t === null || d <= t) _cpPairs.push({{ g1: labels[i], g2: labels[j], dist: d }});
+                }}
+            }}
+            _renderClosePairs(t);
+        }}
+
+        function sortClosePairs(field) {{
+            if (_cpSortField === field) {{ _cpSortAsc = !_cpSortAsc; }}
+            else {{ _cpSortField = field; _cpSortAsc = (field === 'dist'); }}
+            _renderClosePairs(getDmThreshold());
+        }}
+
+        function _renderClosePairs(t) {{
+            ['g1', 'g2', 'dist'].forEach(f => {{
+                const el = document.getElementById('cpSort_' + f);
+                if (el) el.textContent = '';
+            }});
+            const sortEl = document.getElementById('cpSort_' + _cpSortField);
+            if (sortEl) sortEl.textContent = _cpSortAsc ? ' ▲' : ' ▼';
+
+            const sorted = _cpPairs.slice().sort((a, b) => {{
+                const av = a[_cpSortField], bv = b[_cpSortField];
+                const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+                return _cpSortAsc ? cmp : -cmp;
+            }});
+
+            const tbody = document.getElementById('cpBody');
+            tbody.innerHTML = '';
+            if (sorted.length === 0) {{
+                const tr = document.createElement('tr');
+                const td = document.createElement('td');
+                td.colSpan = 3;
+                td.style.cssText = 'padding:14px; text-align:center; color:#666; font-style:italic;';
+                td.textContent = 'No pairs found within the specified threshold. Try increasing the threshold.';
+                tr.appendChild(td); tbody.appendChild(tr);
+            }} else {{
+                sorted.forEach(pair => {{
+                    const {{ bg, fg }} = getDmColor(pair.dist, t);
+                    const tr   = document.createElement('tr');
+                    const tdg1 = document.createElement('td');
+                    const tdg2 = document.createElement('td');
+                    const tdd  = document.createElement('td');
+                    tdg1.style.cssText = 'padding:4px 12px; border:1px solid #ddd; font-size:12px;';
+                    tdg2.style.cssText = 'padding:4px 12px; border:1px solid #ddd; font-size:12px;';
+                    tdd.style.cssText  = 'padding:4px 12px; border:1px solid #ddd; font-size:12px; text-align:center; font-weight:bold; background:' + bg + '; color:' + fg + ';';
+                    tdg1.textContent = pair.g1;
+                    tdg2.textContent = pair.g2;
+                    tdd.textContent  = pair.dist;
+                    tr.appendChild(tdg1); tr.appendChild(tdg2); tr.appendChild(tdd);
+                    tbody.appendChild(tr);
+                }});
+            }}
+            document.getElementById('cpCount').textContent =
+                sorted.length === 1 ? '1 pair found' : sorted.length + ' pairs found';
+        }}
+
+        // ===== Full Distance Matrix Table =====
+        function buildDistTable() {{
+            const searchVal = document.getElementById('dmSearch') ? document.getElementById('dmSearch').value.trim().toLowerCase() : '';
+            const t = getDmThreshold();
+            const {{ labels, matrix }} = getActiveMatrix();
+            const n = labels.length;
+
+            const kmEl = document.getElementById('dmKeyMatching');
+            const kaEl = document.getElementById('dmKeyAbove');
+            if (kmEl) kmEl.textContent = t !== null ? `Matching threshold (≤${{t}})` : 'Matching threshold';
+            if (kaEl) kaEl.textContent = t !== null ? `Above threshold (>${{t}})`          : 'Above threshold';
+
+            const visibleRows = [];
+            labels.forEach((lbl, i) => {{
+                if (!searchVal || lbl.toLowerCase().includes(searchVal)) visibleRows.push(i);
+            }});
+
+            const table    = document.getElementById('dmTable');
+            const fragment = document.createDocumentFragment();
+
+            const thead  = document.createElement('thead');
+            const hRow   = document.createElement('tr');
+            const corner = document.createElement('th');
+            corner.style.cssText = 'position:sticky; top:0; left:0; z-index:4; background:#fff; padding:4px 8px; border:1px solid #ddd; min-width:120px;';
+            corner.textContent = '';
+            hRow.appendChild(corner);
+            labels.forEach(lbl => {{
+                const th = document.createElement('th');
+                th.style.cssText = 'position:sticky; top:0; z-index:2; background:#f8f8f8; border:1px solid #ddd; padding:2px; font-size:10px; font-weight:normal; writing-mode:vertical-rl; transform:rotate(180deg); height:110px; vertical-align:bottom; text-align:left;';
+                th.textContent = lbl;
+                hRow.appendChild(th);
+            }});
+            thead.appendChild(hRow);
+            fragment.appendChild(thead);
+
+            const tbody = document.createElement('tbody');
+            visibleRows.forEach(i => {{
+                const tr    = document.createElement('tr');
+                const rowTh = document.createElement('th');
+                rowTh.style.cssText = 'position:sticky; left:0; z-index:1; background:#f8f8f8; border:1px solid #ddd; padding:3px 8px; font-size:11px; font-weight:normal; white-space:nowrap; text-align:left;';
+                rowTh.textContent = labels[i];
+                tr.appendChild(rowTh);
+                labels.forEach((lbl, j) => {{
+                    const val        = matrix[i][j];
+                    const {{ bg, fg }} = getDmColor(val, t);
+                    const td         = document.createElement('td');
+                    td.style.cssText = 'background:' + bg + '; color:' + fg + '; padding:3px 5px; border:1px solid #ddd; text-align:center; font-size:11px; min-width:28px;';
+                    td.textContent   = val;
+                    td.title         = labels[i] + ' vs ' + lbl + ': ' + val + ' SNP differences';
+                    tr.appendChild(td);
+                }});
+                tbody.appendChild(tr);
+            }});
+            if (visibleRows.length === 0) {{
+                const emptyTr = document.createElement('tr');
+                const emptyTd = document.createElement('td');
+                emptyTd.colSpan = n + 1;
+                emptyTd.style.cssText = 'padding:16px; text-align:center; color:#666; font-style:italic;';
+                emptyTd.textContent   = 'No genomes match the current filters.';
+                emptyTr.appendChild(emptyTd);
+                tbody.appendChild(emptyTr);
+            }}
+            fragment.appendChild(tbody);
+            table.innerHTML = '';
+            table.appendChild(fragment);
+
+            document.getElementById('dmRowCount').textContent =
+                visibleRows.length === n
+                    ? 'Showing all ' + n + ' genomes'
+                    : 'Showing ' + visibleRows.length + ' of ' + n + ' genomes';
         }}
 
         // ===== Tree viewer =====
@@ -773,17 +1087,23 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
                 }});
         }}
 
-        // Initial render
+        // Initial render — Viridis by default
         recolorHeatmap();
         updateSVG();
-        </script>
+    </script>
     """.format(
-    all_genome_ids=all_genome_ids,
-    all_snpMatrix=all_snpMatrix,
-    core_genome_ids=core_genome_ids,
-    core_snpMatrix=core_snpMatrix,
-    majority_genome_ids=majority_genome_ids,
-    majority_snpMatrix=majority_snpMatrix,
+    all_ids_rep=all_ids_rep,
+    all_mat_rep=all_mat_rep,
+    core_ids_rep=core_ids_rep,
+    core_mat_rep=core_mat_rep,
+    majority_ids_rep=majority_ids_rep,
+    majority_mat_rep=majority_mat_rep,
+    all_ids_mat=all_ids_mat,
+    all_mat_mat=all_mat_mat,
+    core_ids_mat=core_ids_mat,
+    core_mat_mat=core_mat_mat,
+    majority_ids_mat=majority_ids_mat,
+    majority_mat_mat=majority_mat_mat,
     metadata_json_string=metadata_json_string,
     majority_threshold=majority_threshold,
     )
@@ -877,10 +1197,19 @@ def ksnp4_filename_format(filename):
     return "{}{}".format(name, ext)
 
 
-def make_genome_bar_chart(data, report_data, majority_threshold):    
-    majority_snps_value = report_data["COUNT_coreSNPs"][0]["Number SNPs in at least a fraction {} of genomes".format(majority_threshold)]
-    core_snps_value = report_data["COUNT_coreSNPs"][0]["Number core SNPs"]
-    total_snps_value = report_data["COUNT_SNPs"][0]["Number_SNPs"]
+def make_genome_bar_chart(data, report_data, majority_threshold):
+    if "COUNT_coreSNPs" not in report_data or "COUNT_SNPs" not in report_data:
+        msg = "SNP count files not found; skipping SNP distribution chart.\n"
+        sys.stderr.write(msg)
+        return "<p>SNP distribution chart not available: SNP count data is missing.</p>"
+    try:
+        majority_snps_value = report_data["COUNT_coreSNPs"][0]["Number SNPs in at least a fraction {} of genomes".format(majority_threshold)]
+        core_snps_value = report_data["COUNT_coreSNPs"][0]["Number core SNPs"]
+        total_snps_value = report_data["COUNT_SNPs"][0]["Number_SNPs"]
+    except (KeyError, IndexError) as e:
+        msg = "SNP count data is incomplete ({}); skipping SNP distribution chart.\n".format(e)
+        sys.stderr.write(msg)
+        return "<p>SNP distribution chart not available: SNP count data is incomplete.</p>"
     
     categories = ["Total SNPs", "Majority SNPs", "Core_SNPs"] 
     values = [total_snps_value, majority_snps_value, core_snps_value]
@@ -1106,6 +1435,16 @@ def parse_optimum_k(kchooser_report):
     print("Optimum value of k not found")
   
 
+def read_ksnp_distance_matrix(ksnp_dist_matrix):
+    df = pd.read_csv(ksnp_dist_matrix, sep='\t', header=0, index_col=None)
+    genome_ids_raw = list(df.columns)
+    df.index = genome_ids_raw
+    # Round to 4 decimal places for readability
+    matrix = [[round(v, 4) for v in row] for row in df.values.tolist()]
+    genome_ids = [gid.replace("_", ".") for gid in genome_ids_raw]
+    return genome_ids, matrix
+
+
 def read_ksnp_distance_report(ksnp_dist_report):
     df = pd.read_csv(ksnp_dist_report, sep='\t', header=None)
     df.columns = ["value", "genome1", "genome2"]
@@ -1195,14 +1534,22 @@ def write_homoplastic_snp_table(report_data):
                 method = "Neighbor Joining"
             homoplastic_count = value[0]['Number_Homoplastic_SNPs']
             majority_snps_data.append({"Method": method, "Number_Homoplastic_SNPs": homoplastic_count})
-    # Convert to DataFrames
-    df_a = pd.DataFrame(all_snps_data).rename(columns={"Number_Homoplastic_SNPs": "All SNPs"})
-    df_c = pd.DataFrame(core_snps_data).rename(columns={"Number_Homoplastic_SNPs": "Core SNPs"})
-    merged_df = pd.merge(df_a, df_c, on="Method")
-    if len(majority_snps_data) != 0:
+    # Convert to DataFrames — skip any SNP set that produced no data
+    merged_df = None
+    if all_snps_data:
+        merged_df = pd.DataFrame(all_snps_data).rename(columns={"Number_Homoplastic_SNPs": "All SNPs"})
+    else:
+        sys.stderr.write("No All SNP homoplastic data found; skipping All SNPs column.\n")
+    if core_snps_data:
+        df_c = pd.DataFrame(core_snps_data).rename(columns={"Number_Homoplastic_SNPs": "Core SNPs"})
+        merged_df = pd.merge(merged_df, df_c, on="Method", how="outer") if merged_df is not None else df_c
+    else:
+        sys.stderr.write("No Core SNP homoplastic data found; skipping Core SNPs column.\n")
+    if majority_snps_data:
         df_m = pd.DataFrame(majority_snps_data).rename(columns={"Number_Homoplastic_SNPs": "Majority SNPs"})
-        # Merge on 'Method'
-        merged_df = pd.merge(merged_df, df_m, on="Method")
+        merged_df = pd.merge(merged_df, df_m, on="Method", how="outer") if merged_df is not None else df_m
+    if merged_df is None or merged_df.empty:
+        return "<p>No homoplastic SNP data available.</p>"
     homoplastic_snps_html = generate_table_html_2(merged_df, table_width='75%')
     return homoplastic_snps_html
 
