@@ -114,8 +114,8 @@ sub run
         # #   "sra_accession", "genbank_accession", "refseq_accession", "comments", "date_inserted", "date_modified", "public", "owner", "members", "",
         # #   "accession", "patric_id", "public", "genome_status", "state");
         my @genome_metadata_fields = (
-        "genome_id", "genome_name", "species", "strain", "genbank_accessions", "subtype", "lineage", "clade", "host_group", 
-        "host_common_name", "host_scientific_name", "collection_year", "geographic_group", "isolation_country", "genome_status", 
+        "genome_id", "genome_name", "species", "strain", "genbank_accessions", "bioproject_accession", "biosample_accession", "city", "serovar", "subtype", "lineage", "clade", "host_group", 
+        "host_common_name", "host_scientific_name", "collection_year", "geographic_group", "isolation_source", "isolation_country", "genome_status", 
         "state_province", "state");
         my @genome_group_metadata = $api->retrieve_genome_metadata(@group_genome_ids, \@genome_metadata_fields);
         my $json_string = encode_json(@genome_group_metadata);
