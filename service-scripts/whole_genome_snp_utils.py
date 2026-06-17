@@ -71,22 +71,30 @@ def create_genome_length_bar_plot(clean_data_dir):
 def create_metadata_table(metadata_json, tsv_out):
     with open(metadata_json) as f:
         metadata = json.load(f)
-    # Convert genome_id: replace '.' with '_'
     for record in metadata:
-        # match the style of the genome ids in the heatmap
         record["genome_id"] = record["genome_id"].replace("_", ".")
-    metadata_df = pd.json_normalize(metadata)
+
+    total = len(metadata)
+    if total == 0:
+        return [], pd.DataFrame()
 
     # Get all unique headers from the JSON data
     all_headers = sorted({key for row in metadata for key in row.keys()})
 
-    # Missing data filled with N/As
-    for row in metadata:
-        for header in all_headers:
-            row.setdefault(header, "N/A")
-    # export as TSV
+    # Keep columns with >= 70% non-missing values; always keep genome_id
+    threshold = 0.70
+    kept_headers = [
+        h for h in all_headers
+        if h == "genome_id" or
+        sum(1 for row in metadata if row.get(h) not in (None, "", "N/A")) / total >= threshold
+    ]
+
+    # Fill missing data with N/A for kept columns only
+    filtered_metadata = [{h: row.get(h, "N/A") for h in kept_headers} for row in metadata]
+
+    metadata_df = pd.DataFrame(filtered_metadata)
     metadata_df.to_csv(tsv_out, index=False, sep="\t")
-    return metadata, metadata_df
+    return filtered_metadata, metadata_df
 
 
 def define_html_template(input_genome_table, barplot_html, snp_distribution_html, homoplastic_snps_html, heatmap_html, majority_threshold, metadata_json_string):
@@ -312,13 +320,10 @@ def define_html_template(input_genome_table, barplot_html, snp_distribution_html
 
                     // Initialize DataTables
                     $('#dataTable').DataTable({{
-                        pageLength: 10,  // Rows per page
-                        lengthMenu: [10, 25, 50, 100],  // Pagination options
-                        orderCellsTop: true,  // Keep filters at the top
-                        initComplete: function () {{
-                        // Automatically focus on the filter input of the first column for usability
-                        $('#dataTable thead input').first();
-                        }}
+                        pageLength: 10,
+                        lengthMenu: [10, 25, 50, 100],
+                        orderCellsTop: true,
+                        autoWidth: false,
                     }});
                 }}
 
@@ -422,10 +427,12 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
     core_ids_rep,     core_mat_rep,     core_ids_mat,     core_mat_mat     = load_subset(**file_paths["core"])
     majority_ids_rep, majority_mat_rep, majority_ids_mat, majority_mat_mat = load_subset(**file_paths["majority"])
     # format the metadata into a string for the report
-    metadata_json_string, metadata_df = create_metadata_table(metadata_json, "metadata.tsv")
+    metadata_json_string, metadata_df = create_metadata_table(metadata_json, "all_metadata.tsv")
     heatmap_template = """
     <!-- Plotly.js v3.0.1  — last updated June 2025 -->
     <script src="https://cdn.plot.ly/plotly-3.0.1.min.js"></script>
+    <!-- xlsx-js-style for Excel export with cell colours -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
     <h3>SNP Distance Heatmap and Metadata</h3>
     <p>The kSNPdist tool measures genetic differences between genomes by comparing single nucleotide
     polymorphisms (SNPs), which are small variations in DNA sequence. It calculates how similar or different
@@ -498,6 +505,11 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
         <h4>Filter and Sort the Data:</h4>
         <label>Reorder Heatmap:
           <select id="metadataFieldSelect" onchange="recolorHeatmap()">
+            <!-- options populated dynamically -->
+          </select>
+        </label>
+        <label style="margin-left:16px;">Label Axes By:
+          <select id="heatmapLabelField" onchange="recolorHeatmap()">
             <!-- options populated dynamically -->
           </select>
         </label>
@@ -581,6 +593,12 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
                  oninput="buildDistTable()">
         </label>
         <span id="dmRowCount" style="color:#555; font-size:13px;"></span>
+        <button onclick="exportDistTableToExcel()"
+                style="padding:5px 14px; font-size:13px; cursor:pointer;
+                       background:#217346; color:white; border:none;
+                       border-radius:4px; margin-left:auto;">
+          &#8681; Export to Excel
+        </button>
       </div>
       <div style="display:flex; gap:16px; align-items:center; margin-bottom:10px; font-size:12px; flex-wrap:wrap;">
         <strong>Color key:</strong>
@@ -706,19 +724,32 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
             }});
         }});
 
-        // ===== Populate metadata reorder dropdown =====
+        // ===== Populate metadata reorder and label dropdowns =====
         (function populateMetadataFields() {{
-            const select = document.getElementById('metadataFieldSelect');
             const allKeys = Object.keys(metadata[0]).filter(k => k !== "id");
-            const defaultOption = document.createElement('option');
-            defaultOption.value = "";
-            defaultOption.textContent = "Hierarchical Clustering";
-            select.appendChild(defaultOption);
+
+            const reorderSelect = document.getElementById('metadataFieldSelect');
+            const reorderDefault = document.createElement('option');
+            reorderDefault.value = "";
+            reorderDefault.textContent = "Hierarchical Clustering";
+            reorderSelect.appendChild(reorderDefault);
             allKeys.forEach(field => {{
                 const opt = document.createElement('option');
                 opt.value = field;
                 opt.textContent = field;
-                select.appendChild(opt);
+                reorderSelect.appendChild(opt);
+            }});
+
+            const labelSelect = document.getElementById('heatmapLabelField');
+            const labelDefault = document.createElement('option');
+            labelDefault.value = "";
+            labelDefault.textContent = "Genome ID";
+            labelSelect.appendChild(labelDefault);
+            allKeys.forEach(field => {{
+                const opt = document.createElement('option');
+                opt.value = field;
+                opt.textContent = field;
+                labelSelect.appendChild(opt);
             }});
         }})();
 
@@ -786,8 +817,10 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
         function onHeatmapClick(eventData) {{
             if (!eventData || !eventData.points || eventData.points.length === 0) return;
             const pt   = eventData.points[0];
-            const id1  = pt.y;
-            const id2  = pt.x;
+            // Use customdata genome IDs so the comparison panel works even when axes
+            // are labeled by a metadata field rather than genome ID
+            const id1  = pt.customdata ? pt.customdata[0] : pt.y;
+            const id2  = pt.customdata ? pt.customdata[1] : pt.x;
             const i1   = currentLabels.indexOf(id1);
             const i2   = currentLabels.indexOf(id2);
             const dist = (i1 >= 0 && i2 >= 0) ? currentMatrix[i1][i2] : '';
@@ -807,7 +840,8 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
         function recolorHeatmap() {{
             const t1 = parseInt(document.getElementById('t1a').value);
             const t2 = parseInt(document.getElementById('t2a').value);
-            const metaField = document.getElementById('metadataFieldSelect').value;
+            const metaField  = document.getElementById('metadataFieldSelect').value;
+            const labelField = document.getElementById('heatmapLabelField').value;
 
             let {{ labels: genomeLabels, matrix: snpMatrix }} = getActiveMatrix();
 
@@ -825,6 +859,20 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
 
             currentLabels = genomeLabels;
             currentMatrix = snpMatrix;
+
+            // Build display labels: use metadata field value if selected, fall back to genome ID
+            const displayLabels = genomeLabels.map(id => {{
+                if (!labelField) return id;
+                const meta = idToMeta[id];
+                const val = meta && meta[labelField] && meta[labelField] !== 'N/A'
+                    ? meta[labelField]
+                    : '[No data]';
+                return `${{id}} | ${{val}}`;
+            }});
+
+            // customdata stores [rowGenomeId, colGenomeId] per cell so the click handler
+            // can look up metadata even when display labels are not genome IDs
+            const customData = genomeLabels.map(id1 => genomeLabels.map(id2 => [id1, id2]));
 
             const hoverText = snpMatrix.map((row, i) =>
                 row.map((val, j) => `${{genomeLabels[i]}} vs ${{genomeLabels[j]}}<br>SNP Distance: ${{val}}<br><i>Click to show metadata</i>`)
@@ -853,13 +901,19 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
                 : 'SNP Distance Heatmap'                        + (metaField ? ` – Reordered by "${{metaField}}"` : '');
 
             const traceData = [Object.assign({{
-                z: zData, x: genomeLabels, y: genomeLabels,
+                z: zData, x: displayLabels, y: displayLabels,
                 type: 'heatmap', colorscale: colorscale,
-                text: hoverText, hoverinfo: 'text', colorbar: colorbarConfig
+                text: hoverText, hoverinfo: 'text', colorbar: colorbarConfig,
+                customdata: customData
             }}, extraRange)];
+
+            const heatmapDiv = document.getElementById('heatmap');
+            const plotDim = heatmapDiv.offsetWidth || 700;
 
             const layout = {{
                 title: titleStr,
+                width: plotDim,
+                height: plotDim,
                 xaxis: {{ type: 'category', tickangle: 45 }},
                 yaxis: {{ type: 'category', tickangle: 45 }}
             }};
@@ -1085,6 +1139,79 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
                         'Ensure the <code>report_supporting_documents</code> directory is in ' +
                         'the same folder as this report file.</p>';
                 }});
+        }}
+
+        // ===== Excel export for Distance Matrix Table =====
+        function colorToRgb(color) {{
+            if (color === 'white') return 'FFFFFF';
+            const hex = color.replace('#', '');
+            return hex.length === 3
+                ? hex.split('').map(c => c + c).join('').toUpperCase()
+                : hex.toUpperCase();
+        }}
+
+        function exportDistTableToExcel() {{
+            if (typeof XLSX === 'undefined') {{
+                alert('Excel export library not loaded. Please check your internet connection.');
+                return;
+            }}
+            const searchVal = document.getElementById('dmSearch')
+                ? document.getElementById('dmSearch').value.trim().toLowerCase() : '';
+            const t = getDmThreshold();
+            const {{ labels, matrix }} = getActiveMatrix();
+
+            const visibleRows = [];
+            labels.forEach((lbl, i) => {{
+                if (!searchVal || lbl.toLowerCase().includes(searchVal)) visibleRows.push(i);
+            }});
+
+            const wsData = [];
+            const headerRow = [{{ v: '', s: {{ font: {{ bold: true }}, fill: {{ patternType: 'solid', fgColor: {{ rgb: 'E0E0E0' }} }} }} }}];
+            labels.forEach(lbl => {{
+                headerRow.push({{
+                    v: lbl,
+                    s: {{
+                        font: {{ bold: true }},
+                        fill: {{ patternType: 'solid', fgColor: {{ rgb: 'E0E0E0' }} }},
+                        alignment: {{ textRotation: 90, horizontal: 'center', vertical: 'bottom' }}
+                    }}
+                }});
+            }});
+            wsData.push(headerRow);
+
+            visibleRows.forEach(i => {{
+                const row = [{{
+                    v: labels[i],
+                    s: {{ font: {{ bold: true }}, fill: {{ patternType: 'solid', fgColor: {{ rgb: 'E0E0E0' }} }} }}
+                }}];
+                labels.forEach((lbl, j) => {{
+                    const val = matrix[i][j];
+                    const {{ bg, fg }} = getDmColor(val, t);
+                    row.push({{
+                        v: val,
+                        t: 'n',
+                        s: {{
+                            fill: {{ patternType: 'solid', fgColor: {{ rgb: colorToRgb(bg) }} }},
+                            font: {{ color: {{ rgb: colorToRgb(fg) }} }},
+                            alignment: {{ horizontal: 'center' }}
+                        }}
+                    }});
+                }});
+                wsData.push(row);
+            }});
+
+            const ws = XLSX.utils.aoa_to_sheet(wsData);
+            ws['!cols'] = [{{ wch: 22 }}].concat(labels.map(() => ({{ wch: 10 }})));
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Distance Matrix');
+
+            const subsetEl = document.getElementById('matrixSelector');
+            const subsetText = subsetEl
+                ? subsetEl.options[subsetEl.selectedIndex].text.replace(/\s+/g, '_')
+                : 'SNP';
+            const srcEl = document.getElementById('dataSourceSelector');
+            const srcText = srcEl && srcEl.value === 'matrix' ? 'matrix' : 'report';
+            XLSX.writeFile(wb, `snp_distance_${{subsetText}}_${{srcText}}.xlsx`);
         }}
 
         // Initial render — Viridis by default
@@ -1625,7 +1752,7 @@ def run_tree_to_svg(service_config):
                 "tree.SNPs_in_majority{}.parsimony.tre".format(majority_threshold)
                 ]
     for tree_filename in tree_filenames:
-        file_path = os.path.join(work_dir, tree_filename)
+        file_path = os.path.join(work_dir, "clean_trees", tree_filename)
         if os.path.exists(file_path) == True and os.path.getsize(file_path) > 0:
             run_p3x_tree_to_svg(file_path, tree_svg_dir)
         else:
@@ -1673,6 +1800,10 @@ def write_html_report(service_config, html_report_path):
     input_genome_table = generate_table_html_2(kchooser_df, table_width='75%')
     # SNP Counts 
     heatmap_html, metadata_json_string = interactive_threshold_heatmap(service_config, metadata_json, majority_threshold)
+    output_dir = data["output_data_dir"]
+    tsv_dst = os.path.join(output_dir, "all_metadata.tsv")
+    if os.path.exists("all_metadata.tsv"):
+        shutil.copy("all_metadata.tsv", tsv_dst)
     html_template = define_html_template(input_genome_table, barplot_html, snp_distribution_html, \
                     homoplastic_snps_html, heatmap_html, \
                     majority_threshold, metadata_json_string)
