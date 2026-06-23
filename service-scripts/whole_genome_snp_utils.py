@@ -79,20 +79,20 @@ def create_metadata_table(metadata_json, tsv_out):
         return [], pd.DataFrame()
 
     # Get all unique headers from the JSON data
-    all_headers = sorted({key for row in metadata for key in row.keys()})
+    all_headers = sorted({key for row in metadata for key in row.keys()} - {"genome_id"})
 
-    # Keep columns with >= 70% non-missing values; always keep genome_id
+    # Keep columns with >= 70% non-missing values; always keep genome_id first
     threshold = 0.70
-    kept_headers = [
+    kept_headers = ["genome_id"] + [
         h for h in all_headers
-        if h == "genome_id" or
-        sum(1 for row in metadata if row.get(h) not in (None, "", "N/A")) / total >= threshold
+        if sum(1 for row in metadata if row.get(h) not in (None, "", "N/A")) / total >= threshold
     ]
 
     # Fill missing data with N/A for kept columns only
     filtered_metadata = [{h: row.get(h, "N/A") for h in kept_headers} for row in metadata]
 
     metadata_df = pd.DataFrame(filtered_metadata)
+    metadata_df["genome_id"] = metadata_df["genome_id"].astype(str)
     metadata_df.to_csv(tsv_out, index=False, sep="\t")
     return filtered_metadata, metadata_df
 
@@ -427,7 +427,7 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
     core_ids_rep,     core_mat_rep,     core_ids_mat,     core_mat_mat     = load_subset(**file_paths["core"])
     majority_ids_rep, majority_mat_rep, majority_ids_mat, majority_mat_mat = load_subset(**file_paths["majority"])
     # format the metadata into a string for the report
-    metadata_json_string, metadata_df = create_metadata_table(metadata_json, "all_metadata.tsv")
+    metadata_json_string, metadata_df = create_metadata_table(metadata_json, "metadata.tsv")
     heatmap_template = """
     <!-- Plotly.js v3.0.1  — last updated June 2025 -->
     <script src="https://cdn.plot.ly/plotly-3.0.1.min.js"></script>
@@ -1449,32 +1449,24 @@ def organize_files_by_type(work_dir, destination_dir):
             VCFs_dir = os.path.join(destination_dir, "VCFs")
             os.makedirs(VCFs_dir, exist_ok=True)
             shutil.copy(file_path, VCFs_dir)
-    # Trees get their own loop
+    # Trees get their own loop — only process tree.* files, skip tree_* (AlleleCounts, tipAlleleCounts, etc.)
     clean_tree_dir = os.path.join(work_dir,"clean_trees")
     for filename in os.listdir(clean_tree_dir):
+        if not filename.startswith("tree."):
+            continue
         file_path = os.path.join(clean_tree_dir, filename)
         group = infer_output_subtype(filename)
-        if filename == "tree_AlleleCounts.parsimony.tre" or filename == "tree_AlleleCounts.parsimony.tre.phyloxml":
-            all_snps_dir = os.path.join(destination_dir, "All_SNPs", "Trees")
-            shutil.copy(file_path, all_snps_dir)
+        if group == "All_SNPs" or group == "Core_SNPs" or group == "Majority_SNPs":
+            tree_dir = os.path.join(destination_dir, group, "Trees")
         else:
-            if group == "All_SNPs" or group == "Core_SNPs" or group == "Majority_SNPs":
-                tree_dir = os.path.join(destination_dir, group, "Trees")
-                os.makedirs(tree_dir, exist_ok=True)
-                if os.path.splitext(file_path)[-1].lower() == ".tre":
-                    newick_dir = os.path.join(tree_dir, "Newick_Files")
-                    os.makedirs(newick_dir, exist_ok=True)
-                    shutil.copy(file_path, newick_dir)
-                else:
-                    shutil.copy(file_path, tree_dir)
-            else:
-                tree_dir = os.path.join(destination_dir, "All_SNPs", "Trees")
-                if os.path.splitext(file_path)[-1].lower() == ".tre":
-                    newick_dir = os.path.join(tree_dir, "Newick_Files")
-                    os.makedirs(newick_dir, exist_ok=True)
-                    shutil.copy(file_path, newick_dir)
-                else:
-                    shutil.copy(file_path, tree_dir)
+            tree_dir = os.path.join(destination_dir, "All_SNPs", "Trees")
+        os.makedirs(tree_dir, exist_ok=True)
+        if os.path.splitext(file_path)[-1].lower() == ".tre":
+            newick_dir = os.path.join(tree_dir, "Newick_Files")
+            os.makedirs(newick_dir, exist_ok=True)
+            shutil.copy(file_path, newick_dir)
+        else:
+            shutil.copy(file_path, tree_dir)
 
 
 def parse_core_snps(file_path, filename):
@@ -1611,6 +1603,40 @@ def read_plotly_html(plot_path):
     # Assuming extracted_content contains our needed Plotly graph initialization scripts
     plotly_graph_content = extracted_content[0] if extracted_content else ''
     return plotly_graph_content
+
+
+def process_ksnp_report(report_path):
+    """Add column header and replace underscores with dots in genome IDs.
+
+    Produces the format: distance\\tgenome_id_1\\tgenome_id_2 (matching the
+    cgMLST distance report), with genome IDs using dots rather than the
+    underscores kSNP4 uses internally.
+    """
+    if not os.path.exists(report_path) or os.path.getsize(report_path) == 0:
+        return
+    with open(report_path, "r") as f:
+        first_line = f.readline()
+    has_header = first_line.startswith("distance\t")
+    df = pd.read_csv(report_path, sep="\t", header=0 if has_header else None, dtype=str)
+    if not has_header:
+        df.columns = ["distance", "genome_id_1", "genome_id_2"]
+    df["genome_id_1"] = df["genome_id_1"].str.replace("_", ".", regex=False)
+    df["genome_id_2"] = df["genome_id_2"].str.replace("_", ".", regex=False)
+    df.to_csv(report_path, sep="\t", index=False)
+
+
+def fix_ksnp_matrix_genome_ids(matrix_path):
+    """Fix genome IDs in kSNPdist.matrix: replace underscores with dots and add labeled row index."""
+    if not os.path.exists(matrix_path) or os.path.getsize(matrix_path) == 0:
+        return
+    df = pd.read_csv(matrix_path, sep="\t", header=0, index_col=None)
+    # Already labeled — idempotent
+    if df.columns[0] == "genome_id":
+        return
+    df.columns = [c.replace("_", ".") for c in df.columns]
+    df.index = df.columns.tolist()
+    df.index.name = "genome_id"
+    df.to_csv(matrix_path, sep="\t", index=True)
 
 
 def run_p3x_tree_to_svg(file_path, tree_svg_dir):
@@ -1777,6 +1803,17 @@ def find_optimum_k(kchooser_report):
 
 @cli.command()
 @click.argument("service_config")
+def fix_ksnpdist_outputs(service_config):
+    """Add headers and replace underscores with dots in kSNPdist report and matrix output files."""
+    with open(service_config) as f:
+        data = json.load(f)
+    output_dir = data["output_data_dir"]
+    for subset, subdir in [("all", "All_SNPs"), ("core", "Core_SNPs"), ("majority", "Majority_SNPs")]:
+        process_ksnp_report(os.path.join(output_dir, subdir, "{}_kSNPdist.report".format(subset)))
+        fix_ksnp_matrix_genome_ids(os.path.join(output_dir, subdir, "{}_kSNPdist.matrix".format(subset)))
+
+@cli.command()
+@click.argument("service_config")
 @click.argument("html_report_path")
 def write_html_report(service_config, html_report_path):
     """Write an interactive report summarizing all outputs"""
@@ -1801,9 +1838,16 @@ def write_html_report(service_config, html_report_path):
     # SNP Counts 
     heatmap_html, metadata_json_string = interactive_threshold_heatmap(service_config, metadata_json, majority_threshold)
     output_dir = data["output_data_dir"]
-    tsv_dst = os.path.join(output_dir, "all_metadata.tsv")
-    if os.path.exists("all_metadata.tsv"):
-        shutil.copy("all_metadata.tsv", tsv_dst)
+    tsv_dst = os.path.join(output_dir, "metadata.tsv")
+    if os.path.exists("metadata.tsv"):
+        shutil.copy("metadata.tsv", tsv_dst)
+
+    for subset, subdir in [("all", "All_SNPs"), ("core", "Core_SNPs"), ("majority", "Majority_SNPs")]:
+        report_path = os.path.join(output_dir, subdir, "{}_kSNPdist.report".format(subset))
+        process_ksnp_report(report_path)
+        matrix_path = os.path.join(output_dir, subdir, "{}_kSNPdist.matrix".format(subset))
+        fix_ksnp_matrix_genome_ids(matrix_path)
+
     html_template = define_html_template(input_genome_table, barplot_html, snp_distribution_html, \
                     homoplastic_snps_html, heatmap_html, \
                     majority_threshold, metadata_json_string)
