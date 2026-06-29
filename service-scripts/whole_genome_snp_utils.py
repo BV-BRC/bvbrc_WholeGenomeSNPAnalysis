@@ -71,22 +71,30 @@ def create_genome_length_bar_plot(clean_data_dir):
 def create_metadata_table(metadata_json, tsv_out):
     with open(metadata_json) as f:
         metadata = json.load(f)
-    # Convert genome_id: replace '.' with '_'
     for record in metadata:
-        # match the style of the genome ids in the heatmap
         record["genome_id"] = record["genome_id"].replace("_", ".")
-    metadata_df = pd.json_normalize(metadata)
+
+    total = len(metadata)
+    if total == 0:
+        return [], pd.DataFrame()
 
     # Get all unique headers from the JSON data
-    all_headers = sorted({key for row in metadata for key in row.keys()})
+    all_headers = sorted({key for row in metadata for key in row.keys()} - {"genome_id"})
 
-    # Missing data filled with N/As
-    for row in metadata:
-        for header in all_headers:
-            row.setdefault(header, "N/A")
-    # export as TSV
+    # Keep columns with >= 70% non-missing values; always keep genome_id first
+    threshold = 0.70
+    kept_headers = ["genome_id"] + [
+        h for h in all_headers
+        if sum(1 for row in metadata if row.get(h) not in (None, "", "N/A")) / total >= threshold
+    ]
+
+    # Fill missing data with N/A for kept columns only
+    filtered_metadata = [{h: row.get(h, "N/A") for h in kept_headers} for row in metadata]
+
+    metadata_df = pd.DataFrame(filtered_metadata)
+    metadata_df["genome_id"] = metadata_df["genome_id"].astype(str)
     metadata_df.to_csv(tsv_out, index=False, sep="\t")
-    return metadata, metadata_df
+    return filtered_metadata, metadata_df
 
 
 def define_html_template(input_genome_table, barplot_html, snp_distribution_html, homoplastic_snps_html, heatmap_html, majority_threshold, metadata_json_string):
@@ -312,13 +320,10 @@ def define_html_template(input_genome_table, barplot_html, snp_distribution_html
 
                     // Initialize DataTables
                     $('#dataTable').DataTable({{
-                        pageLength: 10,  // Rows per page
-                        lengthMenu: [10, 25, 50, 100],  // Pagination options
-                        orderCellsTop: true,  // Keep filters at the top
-                        initComplete: function () {{
-                        // Automatically focus on the filter input of the first column for usability
-                        $('#dataTable thead input').first();
-                        }}
+                        pageLength: 10,
+                        lengthMenu: [10, 25, 50, 100],
+                        orderCellsTop: true,
+                        autoWidth: false,
                     }});
                 }}
 
@@ -426,6 +431,8 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
     heatmap_template = """
     <!-- Plotly.js v3.0.1  — last updated June 2025 -->
     <script src="https://cdn.plot.ly/plotly-3.0.1.min.js"></script>
+    <!-- xlsx-js-style for Excel export with cell colours -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
     <h3>SNP Distance Heatmap and Metadata</h3>
     <p>The kSNPdist tool measures genetic differences between genomes by comparing single nucleotide
     polymorphisms (SNPs), which are small variations in DNA sequence. It calculates how similar or different
@@ -498,6 +505,11 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
         <h4>Filter and Sort the Data:</h4>
         <label>Reorder Heatmap:
           <select id="metadataFieldSelect" onchange="recolorHeatmap()">
+            <!-- options populated dynamically -->
+          </select>
+        </label>
+        <label style="margin-left:16px;">Label Axes By:
+          <select id="heatmapLabelField" onchange="recolorHeatmap()">
             <!-- options populated dynamically -->
           </select>
         </label>
@@ -581,6 +593,12 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
                  oninput="buildDistTable()">
         </label>
         <span id="dmRowCount" style="color:#555; font-size:13px;"></span>
+        <button onclick="exportDistTableToExcel()"
+                style="padding:5px 14px; font-size:13px; cursor:pointer;
+                       background:#217346; color:white; border:none;
+                       border-radius:4px; margin-left:auto;">
+          &#8681; Export to Excel
+        </button>
       </div>
       <div style="display:flex; gap:16px; align-items:center; margin-bottom:10px; font-size:12px; flex-wrap:wrap;">
         <strong>Color key:</strong>
@@ -706,19 +724,32 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
             }});
         }});
 
-        // ===== Populate metadata reorder dropdown =====
+        // ===== Populate metadata reorder and label dropdowns =====
         (function populateMetadataFields() {{
-            const select = document.getElementById('metadataFieldSelect');
             const allKeys = Object.keys(metadata[0]).filter(k => k !== "id");
-            const defaultOption = document.createElement('option');
-            defaultOption.value = "";
-            defaultOption.textContent = "Hierarchical Clustering";
-            select.appendChild(defaultOption);
+
+            const reorderSelect = document.getElementById('metadataFieldSelect');
+            const reorderDefault = document.createElement('option');
+            reorderDefault.value = "";
+            reorderDefault.textContent = "Hierarchical Clustering";
+            reorderSelect.appendChild(reorderDefault);
             allKeys.forEach(field => {{
                 const opt = document.createElement('option');
                 opt.value = field;
                 opt.textContent = field;
-                select.appendChild(opt);
+                reorderSelect.appendChild(opt);
+            }});
+
+            const labelSelect = document.getElementById('heatmapLabelField');
+            const labelDefault = document.createElement('option');
+            labelDefault.value = "";
+            labelDefault.textContent = "Genome ID";
+            labelSelect.appendChild(labelDefault);
+            allKeys.forEach(field => {{
+                const opt = document.createElement('option');
+                opt.value = field;
+                opt.textContent = field;
+                labelSelect.appendChild(opt);
             }});
         }})();
 
@@ -786,8 +817,10 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
         function onHeatmapClick(eventData) {{
             if (!eventData || !eventData.points || eventData.points.length === 0) return;
             const pt   = eventData.points[0];
-            const id1  = pt.y;
-            const id2  = pt.x;
+            // Use customdata genome IDs so the comparison panel works even when axes
+            // are labeled by a metadata field rather than genome ID
+            const id1  = pt.customdata ? pt.customdata[0] : pt.y;
+            const id2  = pt.customdata ? pt.customdata[1] : pt.x;
             const i1   = currentLabels.indexOf(id1);
             const i2   = currentLabels.indexOf(id2);
             const dist = (i1 >= 0 && i2 >= 0) ? currentMatrix[i1][i2] : '';
@@ -807,7 +840,8 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
         function recolorHeatmap() {{
             const t1 = parseInt(document.getElementById('t1a').value);
             const t2 = parseInt(document.getElementById('t2a').value);
-            const metaField = document.getElementById('metadataFieldSelect').value;
+            const metaField  = document.getElementById('metadataFieldSelect').value;
+            const labelField = document.getElementById('heatmapLabelField').value;
 
             let {{ labels: genomeLabels, matrix: snpMatrix }} = getActiveMatrix();
 
@@ -825,6 +859,20 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
 
             currentLabels = genomeLabels;
             currentMatrix = snpMatrix;
+
+            // Build display labels: use metadata field value if selected, fall back to genome ID
+            const displayLabels = genomeLabels.map(id => {{
+                if (!labelField) return id;
+                const meta = idToMeta[id];
+                const val = meta && meta[labelField] && meta[labelField] !== 'N/A'
+                    ? meta[labelField]
+                    : '[No data]';
+                return `${{id}} | ${{val}}`;
+            }});
+
+            // customdata stores [rowGenomeId, colGenomeId] per cell so the click handler
+            // can look up metadata even when display labels are not genome IDs
+            const customData = genomeLabels.map(id1 => genomeLabels.map(id2 => [id1, id2]));
 
             const hoverText = snpMatrix.map((row, i) =>
                 row.map((val, j) => `${{genomeLabels[i]}} vs ${{genomeLabels[j]}}<br>SNP Distance: ${{val}}<br><i>Click to show metadata</i>`)
@@ -853,13 +901,19 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
                 : 'SNP Distance Heatmap'                        + (metaField ? ` – Reordered by "${{metaField}}"` : '');
 
             const traceData = [Object.assign({{
-                z: zData, x: genomeLabels, y: genomeLabels,
+                z: zData, x: displayLabels, y: displayLabels,
                 type: 'heatmap', colorscale: colorscale,
-                text: hoverText, hoverinfo: 'text', colorbar: colorbarConfig
+                text: hoverText, hoverinfo: 'text', colorbar: colorbarConfig,
+                customdata: customData
             }}, extraRange)];
+
+            const heatmapDiv = document.getElementById('heatmap');
+            const plotDim = heatmapDiv.offsetWidth || 700;
 
             const layout = {{
                 title: titleStr,
+                width: plotDim,
+                height: plotDim,
                 xaxis: {{ type: 'category', tickangle: 45 }},
                 yaxis: {{ type: 'category', tickangle: 45 }}
             }};
@@ -1085,6 +1139,79 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
                         'Ensure the <code>report_supporting_documents</code> directory is in ' +
                         'the same folder as this report file.</p>';
                 }});
+        }}
+
+        // ===== Excel export for Distance Matrix Table =====
+        function colorToRgb(color) {{
+            if (color === 'white') return 'FFFFFF';
+            const hex = color.replace('#', '');
+            return hex.length === 3
+                ? hex.split('').map(c => c + c).join('').toUpperCase()
+                : hex.toUpperCase();
+        }}
+
+        function exportDistTableToExcel() {{
+            if (typeof XLSX === 'undefined') {{
+                alert('Excel export library not loaded. Please check your internet connection.');
+                return;
+            }}
+            const searchVal = document.getElementById('dmSearch')
+                ? document.getElementById('dmSearch').value.trim().toLowerCase() : '';
+            const t = getDmThreshold();
+            const {{ labels, matrix }} = getActiveMatrix();
+
+            const visibleRows = [];
+            labels.forEach((lbl, i) => {{
+                if (!searchVal || lbl.toLowerCase().includes(searchVal)) visibleRows.push(i);
+            }});
+
+            const wsData = [];
+            const headerRow = [{{ v: '', s: {{ font: {{ bold: true }}, fill: {{ patternType: 'solid', fgColor: {{ rgb: 'E0E0E0' }} }} }} }}];
+            labels.forEach(lbl => {{
+                headerRow.push({{
+                    v: lbl,
+                    s: {{
+                        font: {{ bold: true }},
+                        fill: {{ patternType: 'solid', fgColor: {{ rgb: 'E0E0E0' }} }},
+                        alignment: {{ textRotation: 90, horizontal: 'center', vertical: 'bottom' }}
+                    }}
+                }});
+            }});
+            wsData.push(headerRow);
+
+            visibleRows.forEach(i => {{
+                const row = [{{
+                    v: labels[i],
+                    s: {{ font: {{ bold: true }}, fill: {{ patternType: 'solid', fgColor: {{ rgb: 'E0E0E0' }} }} }}
+                }}];
+                labels.forEach((lbl, j) => {{
+                    const val = matrix[i][j];
+                    const {{ bg, fg }} = getDmColor(val, t);
+                    row.push({{
+                        v: val,
+                        t: 'n',
+                        s: {{
+                            fill: {{ patternType: 'solid', fgColor: {{ rgb: colorToRgb(bg) }} }},
+                            font: {{ color: {{ rgb: colorToRgb(fg) }} }},
+                            alignment: {{ horizontal: 'center' }}
+                        }}
+                    }});
+                }});
+                wsData.push(row);
+            }});
+
+            const ws = XLSX.utils.aoa_to_sheet(wsData);
+            ws['!cols'] = [{{ wch: 22 }}].concat(labels.map(() => ({{ wch: 10 }})));
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Distance Matrix');
+
+            const subsetEl = document.getElementById('matrixSelector');
+            const subsetText = subsetEl
+                ? subsetEl.options[subsetEl.selectedIndex].text.replace(/\s+/g, '_')
+                : 'SNP';
+            const srcEl = document.getElementById('dataSourceSelector');
+            const srcText = srcEl && srcEl.value === 'matrix' ? 'matrix' : 'report';
+            XLSX.writeFile(wb, `snp_distance_${{subsetText}}_${{srcText}}.xlsx`);
         }}
 
         // Initial render — Viridis by default
@@ -1322,32 +1449,24 @@ def organize_files_by_type(work_dir, destination_dir):
             VCFs_dir = os.path.join(destination_dir, "VCFs")
             os.makedirs(VCFs_dir, exist_ok=True)
             shutil.copy(file_path, VCFs_dir)
-    # Trees get their own loop
+    # Trees get their own loop — only process tree.* files, skip tree_* (AlleleCounts, tipAlleleCounts, etc.)
     clean_tree_dir = os.path.join(work_dir,"clean_trees")
     for filename in os.listdir(clean_tree_dir):
+        if not filename.startswith("tree."):
+            continue
         file_path = os.path.join(clean_tree_dir, filename)
         group = infer_output_subtype(filename)
-        if filename == "tree_AlleleCounts.parsimony.tre" or filename == "tree_AlleleCounts.parsimony.tre.phyloxml":
-            all_snps_dir = os.path.join(destination_dir, "All_SNPs", "Trees")
-            shutil.copy(file_path, all_snps_dir)
+        if group == "All_SNPs" or group == "Core_SNPs" or group == "Majority_SNPs":
+            tree_dir = os.path.join(destination_dir, group, "Trees")
         else:
-            if group == "All_SNPs" or group == "Core_SNPs" or group == "Majority_SNPs":
-                tree_dir = os.path.join(destination_dir, group, "Trees")
-                os.makedirs(tree_dir, exist_ok=True)
-                if os.path.splitext(file_path)[-1].lower() == ".tre":
-                    newick_dir = os.path.join(tree_dir, "Newick_Files")
-                    os.makedirs(newick_dir, exist_ok=True)
-                    shutil.copy(file_path, newick_dir)
-                else:
-                    shutil.copy(file_path, tree_dir)
-            else:
-                tree_dir = os.path.join(destination_dir, "All_SNPs", "Trees")
-                if os.path.splitext(file_path)[-1].lower() == ".tre":
-                    newick_dir = os.path.join(tree_dir, "Newick_Files")
-                    os.makedirs(newick_dir, exist_ok=True)
-                    shutil.copy(file_path, newick_dir)
-                else:
-                    shutil.copy(file_path, tree_dir)
+            tree_dir = os.path.join(destination_dir, "All_SNPs", "Trees")
+        os.makedirs(tree_dir, exist_ok=True)
+        if os.path.splitext(file_path)[-1].lower() == ".tre":
+            newick_dir = os.path.join(tree_dir, "Newick_Files")
+            os.makedirs(newick_dir, exist_ok=True)
+            shutil.copy(file_path, newick_dir)
+        else:
+            shutil.copy(file_path, tree_dir)
 
 
 def parse_core_snps(file_path, filename):
@@ -1484,6 +1603,40 @@ def read_plotly_html(plot_path):
     # Assuming extracted_content contains our needed Plotly graph initialization scripts
     plotly_graph_content = extracted_content[0] if extracted_content else ''
     return plotly_graph_content
+
+
+def process_ksnp_report(report_path):
+    """Add column header and replace underscores with dots in genome IDs.
+
+    Produces the format: distance\\tgenome_id_1\\tgenome_id_2 (matching the
+    cgMLST distance report), with genome IDs using dots rather than the
+    underscores kSNP4 uses internally.
+    """
+    if not os.path.exists(report_path) or os.path.getsize(report_path) == 0:
+        return
+    with open(report_path, "r") as f:
+        first_line = f.readline()
+    has_header = first_line.startswith("distance\t")
+    df = pd.read_csv(report_path, sep="\t", header=0 if has_header else None, dtype=str)
+    if not has_header:
+        df.columns = ["distance", "genome_id_1", "genome_id_2"]
+    df["genome_id_1"] = df["genome_id_1"].str.replace("_", ".", regex=False)
+    df["genome_id_2"] = df["genome_id_2"].str.replace("_", ".", regex=False)
+    df.to_csv(report_path, sep="\t", index=False)
+
+
+def fix_ksnp_matrix_genome_ids(matrix_path):
+    """Fix genome IDs in kSNPdist.matrix: replace underscores with dots and add labeled row index."""
+    if not os.path.exists(matrix_path) or os.path.getsize(matrix_path) == 0:
+        return
+    df = pd.read_csv(matrix_path, sep="\t", header=0, index_col=None)
+    # Already labeled — idempotent
+    if df.columns[0] == "genome_id":
+        return
+    df.columns = [c.replace("_", ".") for c in df.columns]
+    df.index = df.columns.tolist()
+    df.index.name = "genome_id"
+    df.to_csv(matrix_path, sep="\t", index=True)
 
 
 def run_p3x_tree_to_svg(file_path, tree_svg_dir):
@@ -1625,7 +1778,7 @@ def run_tree_to_svg(service_config):
                 "tree.SNPs_in_majority{}.parsimony.tre".format(majority_threshold)
                 ]
     for tree_filename in tree_filenames:
-        file_path = os.path.join(work_dir, tree_filename)
+        file_path = os.path.join(work_dir, "clean_trees", tree_filename)
         if os.path.exists(file_path) == True and os.path.getsize(file_path) > 0:
             run_p3x_tree_to_svg(file_path, tree_svg_dir)
         else:
@@ -1647,6 +1800,17 @@ def organize_output_files(service_config):
 def find_optimum_k(kchooser_report):
     """ Parse the kChooser report for the optimum K value for the kSNP4 command."""
     parse_optimum_k(kchooser_report)
+
+@cli.command()
+@click.argument("service_config")
+def fix_ksnpdist_outputs(service_config):
+    """Add headers and replace underscores with dots in kSNPdist report and matrix output files."""
+    with open(service_config) as f:
+        data = json.load(f)
+    output_dir = data["output_data_dir"]
+    for subset, subdir in [("all", "All_SNPs"), ("core", "Core_SNPs"), ("majority", "Majority_SNPs")]:
+        process_ksnp_report(os.path.join(output_dir, subdir, "{}_kSNPdist.report".format(subset)))
+        fix_ksnp_matrix_genome_ids(os.path.join(output_dir, subdir, "{}_kSNPdist.matrix".format(subset)))
 
 @cli.command()
 @click.argument("service_config")
@@ -1673,6 +1837,17 @@ def write_html_report(service_config, html_report_path):
     input_genome_table = generate_table_html_2(kchooser_df, table_width='75%')
     # SNP Counts 
     heatmap_html, metadata_json_string = interactive_threshold_heatmap(service_config, metadata_json, majority_threshold)
+    output_dir = data["output_data_dir"]
+    tsv_dst = os.path.join(output_dir, "metadata.tsv")
+    if os.path.exists("metadata.tsv"):
+        shutil.copy("metadata.tsv", tsv_dst)
+
+    for subset, subdir in [("all", "All_SNPs"), ("core", "Core_SNPs"), ("majority", "Majority_SNPs")]:
+        report_path = os.path.join(output_dir, subdir, "{}_kSNPdist.report".format(subset))
+        process_ksnp_report(report_path)
+        matrix_path = os.path.join(output_dir, subdir, "{}_kSNPdist.matrix".format(subset))
+        fix_ksnp_matrix_genome_ids(matrix_path)
+
     html_template = define_html_template(input_genome_table, barplot_html, snp_distribution_html, \
                     homoplastic_snps_html, heatmap_html, \
                     majority_threshold, metadata_json_string)

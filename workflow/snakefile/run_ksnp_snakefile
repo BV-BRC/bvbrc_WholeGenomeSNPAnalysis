@@ -240,6 +240,8 @@ rule organize_files:
         """
         whole_genome_snp_utils organize-output-files {input.config}
 
+        whole_genome_snp_utils fix-ksnpdist-outputs {input.config}
+
         whole_genome_snp_utils run-tree-to-svg {input.config}
 
         touch {output.touchpoint}
