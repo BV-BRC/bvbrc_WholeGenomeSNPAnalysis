@@ -93,6 +93,11 @@ def create_metadata_table(metadata_json, tsv_out):
 
     metadata_df = pd.DataFrame(filtered_metadata)
     metadata_df["genome_id"] = metadata_df["genome_id"].astype(str)
+
+    def to_pascal_case(name):
+        return "".join(p.capitalize() for p in name.split("_"))
+
+    metadata_df.columns = [to_pascal_case(c) for c in metadata_df.columns]
     metadata_df.to_csv(tsv_out, index=False, sep="\t")
     return filtered_metadata, metadata_df
 
