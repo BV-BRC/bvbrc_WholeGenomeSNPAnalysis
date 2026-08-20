@@ -380,8 +380,8 @@ def define_html_template(input_genome_table, barplot_html, snp_distribution_html
     return html_template
 
 
-def interactive_threshold_heatmap(service_config, metadata_json, majority_threshold):
-    with open(service_config) as file:
+def interactive_threshold_heatmap(job_config, metadata_json, majority_threshold):
+    with open(job_config) as file:
         data = json.load(file)
     work_dir = data["work_data_dir"]
 
@@ -509,12 +509,12 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
       <div class="heatmap-controls">
         <h4>Filter and Sort the Data:</h4>
         <label>Reorder Heatmap:
-          <select id="metadataFieldSelect" onchange="recolorHeatmap()">
+          <select id="metadataFieldSelect" onchange="syncMetaField(this.value)">
             <!-- options populated dynamically -->
           </select>
         </label>
         <label style="margin-left:16px;">Label Axes By:
-          <select id="heatmapLabelField" onchange="recolorHeatmap()">
+          <select id="heatmapLabelField" onchange="syncLabelField(this.value)">
             <!-- options populated dynamically -->
           </select>
         </label>
@@ -590,6 +590,23 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
       format. Each cell shows the SNP distance between two genomes. Use the <strong>search box</strong>
       to filter rows by genome ID, or set a distance threshold above to highlight cells at or below
       that value.</p>
+      <div class="heatmap-controls">
+        <h4>Filter and Sort the Data:</h4>
+        <label>Reorder Table:
+          <select id="dmMetadataFieldSelect" onchange="syncMetaField(this.value)">
+            <!-- options populated dynamically -->
+          </select>
+        </label>
+        <label style="margin-left:16px;">Label Rows/Columns By:
+          <select id="dmLabelField" onchange="syncLabelField(this.value)">
+            <!-- options populated dynamically -->
+          </select>
+        </label>
+        <label style="margin-left:16px;">
+          <input type="checkbox" id="showGenomeIdDm" checked onchange="buildDistTable()">
+          Display Genome ID with metadata
+        </label>
+      </div>
       <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-bottom:10px;">
         <label style="display:flex; align-items:center; gap:6px;">
           Search genome ID:
@@ -697,6 +714,23 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
             if (dtSec && dtSec.style.display !== 'none') buildDistTable();
         }}
 
+        // ===== Keep Reorder / Label selections in sync between Heatmap and Distance Matrix Table =====
+        function syncMetaField(value) {{
+            document.getElementById('metadataFieldSelect').value = value;
+            document.getElementById('dmMetadataFieldSelect').value = value;
+            recolorHeatmap();
+            const dtSec = document.getElementById('distanceTableViewSection');
+            if (dtSec && dtSec.style.display !== 'none') buildDistTable();
+        }}
+
+        function syncLabelField(value) {{
+            document.getElementById('heatmapLabelField').value = value;
+            document.getElementById('dmLabelField').value = value;
+            recolorHeatmap();
+            const dtSec = document.getElementById('distanceTableViewSection');
+            if (dtSec && dtSec.style.display !== 'none') buildDistTable();
+        }}
+
         // ===== Sync paired threshold inputs (validate only; no auto-recolor) =====
         function syncThresholdInputs() {{
             const t1a = document.getElementById('t1a');
@@ -731,7 +765,7 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
 
         // ===== Populate metadata reorder and label dropdowns =====
         (function populateMetadataFields() {{
-            const allKeys = Object.keys(metadata[0]).filter(k => k !== "id");
+            const allKeys = Object.keys(metadata[0]).filter(k => k !== "id" && k !== "genome_id");
 
             const reorderSelect = document.getElementById('metadataFieldSelect');
             const reorderDefault = document.createElement('option');
@@ -755,6 +789,30 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
                 opt.value = field;
                 opt.textContent = field;
                 labelSelect.appendChild(opt);
+            }});
+
+            const dmReorderSelect = document.getElementById('dmMetadataFieldSelect');
+            const dmReorderDefault = document.createElement('option');
+            dmReorderDefault.value = "";
+            dmReorderDefault.textContent = "Genome ID (default order)";
+            dmReorderSelect.appendChild(dmReorderDefault);
+            allKeys.forEach(field => {{
+                const opt = document.createElement('option');
+                opt.value = field;
+                opt.textContent = field;
+                dmReorderSelect.appendChild(opt);
+            }});
+
+            const dmLabelSelect = document.getElementById('dmLabelField');
+            const dmLabelDefault = document.createElement('option');
+            dmLabelDefault.value = "";
+            dmLabelDefault.textContent = "Genome ID";
+            dmLabelSelect.appendChild(dmLabelDefault);
+            allKeys.forEach(field => {{
+                const opt = document.createElement('option');
+                opt.value = field;
+                opt.textContent = field;
+                dmLabelSelect.appendChild(opt);
             }});
         }})();
 
@@ -1051,8 +1109,27 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
         function buildDistTable() {{
             const searchVal = document.getElementById('dmSearch') ? document.getElementById('dmSearch').value.trim().toLowerCase() : '';
             const t = getDmThreshold();
-            const {{ labels, matrix }} = getActiveMatrix();
+            const metaField  = document.getElementById('dmMetadataFieldSelect') ? document.getElementById('dmMetadataFieldSelect').value : '';
+            const labelField = document.getElementById('dmLabelField') ? document.getElementById('dmLabelField').value : '';
+            const showGenomeId = document.getElementById('showGenomeIdDm') ? document.getElementById('showGenomeIdDm').checked : true;
+            let {{ labels, matrix }} = getActiveMatrix();
+
+            if (metaField) {{
+                const {{ newLabels, newMatrix }} = reorderByField(metaField, labels, matrix);
+                labels = newLabels;
+                matrix = newMatrix;
+            }}
             const n = labels.length;
+
+            // Display labels: use metadata field value if selected, fall back to genome ID
+            const displayLabels = labels.map(id => {{
+                if (!labelField) return id;
+                const meta = idToMeta[id];
+                const val = meta && meta[labelField] && meta[labelField] !== 'N/A'
+                    ? meta[labelField]
+                    : '[No data]';
+                return showGenomeId ? `${{id}} | ${{val}}` : `${{val}}`;
+            }});
 
             const kmEl = document.getElementById('dmKeyMatching');
             const kaEl = document.getElementById('dmKeyAbove');
@@ -1073,7 +1150,7 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
             corner.style.cssText = 'position:sticky; top:0; left:0; z-index:4; background:#fff; padding:4px 8px; border:1px solid #ddd; min-width:120px;';
             corner.textContent = '';
             hRow.appendChild(corner);
-            labels.forEach(lbl => {{
+            displayLabels.forEach(lbl => {{
                 const th = document.createElement('th');
                 th.style.cssText = 'position:sticky; top:0; z-index:2; background:#f8f8f8; border:1px solid #ddd; padding:2px; font-size:10px; font-weight:normal; writing-mode:vertical-rl; transform:rotate(180deg); height:110px; vertical-align:bottom; text-align:left;';
                 th.textContent = lbl;
@@ -1087,7 +1164,7 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
                 const tr    = document.createElement('tr');
                 const rowTh = document.createElement('th');
                 rowTh.style.cssText = 'position:sticky; left:0; z-index:1; background:#f8f8f8; border:1px solid #ddd; padding:3px 8px; font-size:11px; font-weight:normal; white-space:nowrap; text-align:left;';
-                rowTh.textContent = labels[i];
+                rowTh.textContent = displayLabels[i];
                 tr.appendChild(rowTh);
                 labels.forEach((lbl, j) => {{
                     const val        = matrix[i][j];
@@ -1163,7 +1240,25 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
             const searchVal = document.getElementById('dmSearch')
                 ? document.getElementById('dmSearch').value.trim().toLowerCase() : '';
             const t = getDmThreshold();
-            const {{ labels, matrix }} = getActiveMatrix();
+            const metaField  = document.getElementById('dmMetadataFieldSelect') ? document.getElementById('dmMetadataFieldSelect').value : '';
+            const labelField = document.getElementById('dmLabelField') ? document.getElementById('dmLabelField').value : '';
+            const showGenomeId = document.getElementById('showGenomeIdDm') ? document.getElementById('showGenomeIdDm').checked : true;
+            let {{ labels, matrix }} = getActiveMatrix();
+
+            if (metaField) {{
+                const {{ newLabels, newMatrix }} = reorderByField(metaField, labels, matrix);
+                labels = newLabels;
+                matrix = newMatrix;
+            }}
+
+            const displayLabels = labels.map(id => {{
+                if (!labelField) return id;
+                const meta = idToMeta[id];
+                const val = meta && meta[labelField] && meta[labelField] !== 'N/A'
+                    ? meta[labelField]
+                    : '[No data]';
+                return showGenomeId ? `${{id}} | ${{val}}` : `${{val}}`;
+            }});
 
             const visibleRows = [];
             labels.forEach((lbl, i) => {{
@@ -1172,7 +1267,7 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
 
             const wsData = [];
             const headerRow = [{{ v: '', s: {{ font: {{ bold: true }}, fill: {{ patternType: 'solid', fgColor: {{ rgb: 'E0E0E0' }} }} }} }}];
-            labels.forEach(lbl => {{
+            displayLabels.forEach(lbl => {{
                 headerRow.push({{
                     v: lbl,
                     s: {{
@@ -1186,7 +1281,7 @@ def interactive_threshold_heatmap(service_config, metadata_json, majority_thresh
 
             visibleRows.forEach(i => {{
                 const row = [{{
-                    v: labels[i],
+                    v: displayLabels[i],
                     s: {{ font: {{ bold: true }}, fill: {{ patternType: 'solid', fgColor: {{ rgb: 'E0E0E0' }} }} }}
                 }}];
                 labels.forEach((lbl, j) => {{
@@ -1719,10 +1814,10 @@ def cli():
 
 
 @cli.command()
-@click.argument("service_config")
-def clean_fasta_filenames(service_config):
+@click.argument("job_config")
+def clean_fasta_filenames(job_config):
     """Ensure files adhere to the rules defined by kSNP4"""
-    with open(service_config) as file:
+    with open(job_config) as file:
         data = json.load(file)
         raw_fasta_dir = data["raw_fasta_dir"]
         clean_fasta_dir = data["clean_data_dir"]
@@ -1732,10 +1827,10 @@ def clean_fasta_filenames(service_config):
             copy_new_file(clean_fasta_dir, new_name, filename, original_path)
 
 @cli.command()
-@click.argument("service_config")
-def convert_to_phyloxml_trees(service_config):
+@click.argument("job_config")
+def convert_to_phyloxml_trees(job_config):
     """Use genome IDs in the tree files for phyloxml to connect the existing metadata. Iterate through each tree file to remove kSNP4 formating restrictions."""
-    with open(service_config) as file:
+    with open(job_config) as file:
         data = json.load(file)
     ### start organize output files ###
     work_dir = data["work_data_dir"]
@@ -1756,10 +1851,10 @@ def convert_to_phyloxml_trees(service_config):
             run_newick_to_phyloxml(clean_nwk_path)
 
 @cli.command()
-@click.argument("service_config")
-def run_tree_to_svg(service_config):
+@click.argument("job_config")
+def run_tree_to_svg(job_config):
     """Convert static svg images of nine basic trees for the report"""
-    with open(service_config) as file:
+    with open(job_config) as file:
         data = json.load(file)
         majority_threshold = data["params"]["majority-threshold"]
     ### start organize output files ###
@@ -1791,10 +1886,10 @@ def run_tree_to_svg(service_config):
 
 
 @cli.command()
-@click.argument("service_config")
-def organize_output_files(service_config):
+@click.argument("job_config")
+def organize_output_files(job_config):
     """Organize files by type based on the first word. Trees are managed via convert_to_phyloxml_trees."""
-    with open(service_config) as file:
+    with open(job_config) as file:
         data = json.load(file)
     work_dir = data["work_data_dir"]
     destination_dir = data["output_data_dir"]
@@ -1807,10 +1902,10 @@ def find_optimum_k(kchooser_report):
     parse_optimum_k(kchooser_report)
 
 @cli.command()
-@click.argument("service_config")
-def fix_ksnpdist_outputs(service_config):
+@click.argument("job_config")
+def fix_ksnpdist_outputs(job_config):
     """Add headers and replace underscores with dots in kSNPdist report and matrix output files."""
-    with open(service_config) as f:
+    with open(job_config) as f:
         data = json.load(f)
     output_dir = data["output_data_dir"]
     for subset, subdir in [("all", "All_SNPs"), ("core", "Core_SNPs"), ("majority", "Majority_SNPs")]:
@@ -1818,13 +1913,13 @@ def fix_ksnpdist_outputs(service_config):
         fix_ksnp_matrix_genome_ids(os.path.join(output_dir, subdir, "{}_kSNPdist.matrix".format(subset)))
 
 @cli.command()
-@click.argument("service_config")
+@click.argument("job_config")
 @click.argument("html_report_path")
-def write_html_report(service_config, html_report_path):
+def write_html_report(job_config, html_report_path):
     """Write an interactive report summarizing all outputs"""
     # run the functions here 
     report_data = {}
-    with open(service_config) as file:
+    with open(job_config) as file:
         data = json.load(file)
     clean_data_dir = data["clean_data_dir"]
     work_dir = data["work_data_dir"]
@@ -1841,7 +1936,7 @@ def write_html_report(service_config, html_report_path):
     snp_distribution_html = make_genome_bar_chart(data, report_data, majority_threshold)
     input_genome_table = generate_table_html_2(kchooser_df, table_width='75%')
     # SNP Counts 
-    heatmap_html, metadata_json_string = interactive_threshold_heatmap(service_config, metadata_json, majority_threshold)
+    heatmap_html, metadata_json_string = interactive_threshold_heatmap(job_config, metadata_json, majority_threshold)
     output_dir = data["output_data_dir"]
     tsv_dst = os.path.join(output_dir, "metadata.tsv")
     if os.path.exists("metadata.tsv"):
