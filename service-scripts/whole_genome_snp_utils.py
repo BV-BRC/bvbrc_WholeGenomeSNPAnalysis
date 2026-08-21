@@ -1349,12 +1349,27 @@ def edit_newick_genome_id(raw_nwk, clean_nwk):
         sys.stderr.write(msg)
 
 
+_NEWICK_LEAF_LABEL = re.compile(r'(?<=[(,])([^,():;]+)(?=:)')
+
+
 def fix_labels_with_phylo(raw_nwk, clean_nwk):
-    tree = Phylo.read(raw_nwk, "newick")
-    for clade in tree.find_clades():
-        if clade.name:
-            clade.name = clade.name.replace("_", ".")
-    Phylo.write(tree, clean_nwk, "newick")
+    """Revert kSNP4's underscore-formatted genome IDs (leaf labels) back to
+    BV-BRC's dot-formatted genome IDs, leaving internal/support node labels
+    (e.g. RAxML bootstrap tie-break labels like "370.99_0") untouched.
+
+    This intentionally avoids Bio.Phylo's Newick parser: it coerces internal
+    node labels into a numeric `confidence` value, silently dropping/mangling
+    any "_N" suffix in the process (e.g. "24_378" becomes 24378.0), which
+    corrupts the tree instead of just reverting genome IDs. Newick leaf
+    labels are always preceded by "(" or "," and followed by ":", while
+    internal/support labels are always preceded by ")", so a text-level
+    substitution can target only genome IDs without parsing the tree.
+    """
+    with open(raw_nwk) as f:
+        content = f.read()
+    fixed = _NEWICK_LEAF_LABEL.sub(lambda m: m.group(1).replace("_", "."), content)
+    with open(clean_nwk, "w") as f:
+        f.write(fixed)
 
 
 def generate_table_html_2(kchooser_df, table_width='75%'):
