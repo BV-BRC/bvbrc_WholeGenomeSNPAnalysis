@@ -1954,7 +1954,7 @@ def write_html_report(job_config, html_report_path):
     heatmap_html, metadata_json_string = interactive_threshold_heatmap(job_config, metadata_json, majority_threshold)
     output_dir = data["output_data_dir"]
     tsv_dst = os.path.join(output_dir, "metadata.tsv")
-    if os.path.exists("metadata.tsv"):
+    if os.path.exists("metadata.tsv") and os.path.abspath("metadata.tsv") != os.path.abspath(tsv_dst):
         shutil.copy("metadata.tsv", tsv_dst)
 
     for subset, subdir in [("all", "All_SNPs"), ("core", "Core_SNPs"), ("majority", "Majority_SNPs")]:
